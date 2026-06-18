@@ -34,9 +34,9 @@ snapshot below after each `/ship-card` cycle (run `npm run evidence` first).
 | Safety | enforced hooks — prod fence, secrets fence
 _Source: `npm run evidence`. Refresh each cycle; the repo `REPORT.md` is the source of truth._
 
-## Snapshot (refreshed 2026-06-19, after VP-1)
-- **27** commits (2026-06-11 → 2026-06-18); **21** carry the AI-authorship trailer (**78%**, climbing as the convention is followed)
-- **+21 743 / −1 014** authored lines across **313** files (generated lockfiles excluded)
+## Snapshot (refreshed 2026-06-19, after AP-7)
+- **27** commits (2026-06-11 → 2026-06-19); **22** carry the AI-authorship trailer (**81%**)
+- **+22 277 / −1 029** authored lines across **309** files (generated lockfiles excluded)
 - **21** test specs (API 5 · Web 16)
-- Guardrails fired: **8** prod-fence blocks logged (push-to-main ×6, force-push ×1, `gh pr merge` ×1 — all human-only) · **4** green PR gates (4 pass / 1 fail) · **4** lint fixups fed back to the agent
-- Traceability: cards `mMFxZIKE` (auth, PR #1) + `L9fM1Gu7` (storefront, PR #4) + `Z1ADCLQm` (admin shell, PR #5) merged; `EXPtZCJL` (vendor portal shell, PR #7) in review. Trello flow: To Do 14 · In Progress 1 · In Review 2 · Done 3 · Documentation 7
+- Guardrails fired: **9** prod-fence blocks logged (push-to-protected ×7, force-push ×1, `gh pr merge` ×1 — all human-only) · PR gate 4 pass / 1 fail · **23** agent edits logged by the lint hook
+- Traceability: cards `mMFxZIKE` (auth, PR #1) + `L9fM1Gu7` (storefront, PR #4) + `Z1ADCLQm` (admin shell, PR #5) merged; `EXPtZCJL` (vendor portal shell, PR #7) + `DD6Z0NUW` (vendor approvals, PR #8) in review. Trello flow: To Do 14 · In Progress 0 · In Review 3 · Done 3 · Documentation 7
