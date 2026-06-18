@@ -1,0 +1,135 @@
+# Vendor & Admin Portals
+
+Spec for the two role-gated back-office surfaces on top of the existing
+role-discriminated identity model. Front-of-funnel planning only — implementation
+flows through `/ship-card`. Related: [[HB Domain Model]] · [[Auth & Roles]] ·
+[[Listing Types & Vendor Rules]] · [[Order State Machine]] · [[Money & Currency Rules]].
+
+## Problem
+
+Customers can browse/shop today, but there is **no surface for vendors to run their
+business** (list products, see their orders) and **no surface for admins to run the
+platform** (approve vendors, oversee listings/users/orders). The data model and most
+vendor/admin API endpoints already exist; what's missing is the portal UI and a few
+backend gaps (vendor order/fulfilment, admin oversight, dashboard read-models).
+
+## Architecture decisions (confirmed with the user, 2026-06-18)
+
+1. **Identity stays on the single role-discriminated `users` table** (`customer | vendor
+   | admin`). No separate admin store. A vendor's business profile remains the existing
+   `vendors` row, `OneToOne` to the user via `userId`. See [[Auth & Roles]].
+2. **One NestJS monolith.** Reuse the settled `@Roles` / global `RolesGuard` + the
+   service-layer ownership pattern. No microservices, no new auth flow.
+3. **Frontend = lazy-loaded, role-gated route areas inside `apps/web`** — `/vendor/**`
+   (`roleGuard(['vendor'])`) and `/admin/**` (`roleGuard(['admin'])`), each with its own
+   shell/layout component. **Not** separate apps or subdomains. Subdomains remain a
+   later deployment option requiring zero data-model change (same registrable domain keeps
+   the refresh cookie working — see [[Auth & Roles]] SameSite note).
+4. **Sequencing: vendor portal first.** Admin **vendor-approvals** is its gating
+   dependency (a vendor can't transact until an admin approves them).
+
+## Business rules it must honour
+
+From [[Listing Types & Vendor Rules]] and [[Auth & Roles]] — enforce, don't reinvent:
+
+- **Only `approved` vendors can list products or receive orders.** Lifecycle:
+  `pending → approved` (↘ `rejected`); `approved → suspended` (and back). Status changes
+  are **admin-only**.
+- **Vendor-facing queries MUST filter by ownership** — a vendor sees only their own
+  listings/orders. Ownership checks live in the **service layer**, never hand-rolled in
+  controllers.
+- **Listing-type invariant:** vendors create `vendor` listings (must have a `vendorId`);
+  admins create `platform` listings (must not). DB CHECK already enforces this; don't
+  bypass it.
+- **Admin scope:** manage categories, platform listings, vendor approval/suspension, and
+  **all** orders. Vendor scope: own profile, own listings, own order lines.
+- Money stays `numeric(12,2)` + explicit currency; ZAR/NAD peg is data. Dashboard
+  aggregates that sum money get a unit test. See [[Money & Currency Rules]].
+
+## What already exists (do NOT re-build)
+
+- **Vendor API:** full CRUD, `POST /vendors` (self-onboard), `POST /vendors/admin`,
+  `PATCH /vendors/:id/status` (approve/reject/suspend), `GET /vendors` (admin list),
+  `GET /vendors/me`. (`apps/api/src/vendors/vendors.controller.ts`)
+- **Products API:** vendor/admin create with ownership-scoped edit/delete; public read.
+- **Categories API:** admin CRUD.
+- **Auth/guards:** `JwtAuthGuard` + `RolesGuard` + `@Roles`/`@Public`; web `authGuard` +
+  `roleGuard` (reads `route.data.roles`). Vendor route already scaffolded (commented) in
+  `apps/web/src/app/app.routes.ts`.
+- **Design:** a `vendor-dashboard` screen is already pulled under `docs/design/`.
+
+## Backend gaps to fill
+
+- **Vendor orders / fulfilment:** `orders` currently exposes only customer `GET /orders`
+  (`getMyOrders`). Need vendor-scoped read of the `order_items` belonging to the vendor +
+  the confirmed fulfilment transitions (`confirmed→processing`, `processing→handed_to_hb`).
+  See [[Order State Machine]] for the full confirmed transition table.
+- **New `handed_to_hb` OrderStatus:** a new enum value in `@hb/shared` + migration is
+  required (see [[Order State Machine]]).
+- **Admin module:** no consolidated `admin/` module. Admin user-management (list/search,
+  activate/deactivate, role assignment) and cross-cutting order oversight have no home.
+- **Dashboard read-models:** aggregate endpoints for vendor dashboard (own counts, recent
+  orders, revenue) and admin dashboard (pending-vendor count, totals).
+- **Admin bootstrap endpoint:** `POST /auth/bootstrap-admin` — self-sealing (refuses if
+  any admin already exists). Accepts `email` + `password`, creates the first admin user.
+  Callable from Bruno. Must have a unit test verifying it refuses on the second call.
+
+- **Audit log:** new `audit_logs` entity (`id`, `userId`, `action`, `entityType`, `entityId`, `metadata` JSONB, `createdAt`) + TypeORM migration. A shared `AuditService.log()` helper called from service methods on key actions: vendor status changes, order transitions, user role/activation changes, product create/edit/delete, admin bootstrap. Admin-gated `GET /admin/audit-logs` with filtering by action, entityType, userId, and date range + pagination.
+
+## `@hb/shared` contract impact
+
+Interfaces + enums only; API DTOs `implement` them; web consumes them. Likely additions
+(confirm exact shape per slice):
+
+- `enums/order-status.ts`: add `handed_to_hb` value.
+- `contracts/order.ts`: vendor-scoped order/line view DTO; vendor fulfilment status-update
+  request DTO (only `confirmed→processing` and `processing→handed_to_hb` allowed).
+- `contracts/user.ts`: admin user-list item + update-role / set-active request DTO.
+- New `contracts/dashboard.ts`: vendor + admin dashboard summary DTOs.
+- Vendor contracts already cover onboarding/status (`CreateVendorRequest`,
+  `AdminCreateVendorRequest`, `UpdateVendorStatusRequest`). Reuse — don't duplicate.
+
+Every new endpoint input = a class-validator DTO implementing the shared interface.
+
+- `contracts/audit.ts` (new): `AuditLogDto` (`id`, `userId`, `action`, `entityType`, `entityId`, `metadata`, `createdAt`); `AuditLogQueryDto` for filter params (`action?`, `entityType?`, `userId?`, `from?`, `to?`, `page`, `limit`).
+
+## Resolved decisions (2026-06-18)
+
+| Question | Decision |
+|---|---|
+| Who can trigger which order transition? | Admin: all. Vendor (own lines only): `confirmed→processing`, `processing→handed_to_hb`. HB/admin then handles `handed_to_hb→shipped→delivered`. |
+| Vendor onboarding depth for v1? | No document upload. Existing `CreateVendorRequest` fields are sufficient. `verificationDocumentUrl` stays optional, KYC deferred. |
+| Admin bootstrap? | One-shot `POST /auth/bootstrap-admin` endpoint — refuses if any admin exists (self-sealing), returns a normal auth response. Callable from Bruno. |
+
+| Audit log type? | Activity trail stored in a new `audit_logs` DB table. Capture: vendor status changes, order transitions, user role/activation changes, product edits, admin bootstrap. Not application/error logs. |
+
+## Out of scope (separate cards / TBD)
+
+- KYC / banking / verification-document review — deferred past v1 per [[Listing Types & Vendor Rules]].
+- Commission & fee structure, vendor cross-border self-fulfilment — TBD.
+- Splitting admin into its own `apps/admin` / subdomain — deferred deployment option.
+- Real payment/courier providers (ports + stubs stay stubs without an explicit card).
+- Order-placement gate on `isVerified` — already its own (blocked) card #15.
+- Cancellation after `processing`, partial shipment/delivery — still TBD in [[Order State Machine]].
+
+## Open questions (remaining)
+
+- Cancellation policy after `processing` — who can cancel, any restocking fee?
+- Mixed-line orders where one vendor ships and another hasn't — how does order status aggregate?
+
+## Vertical slices (→ Trello cards)
+
+**Vendor portal (first)**
+1. Vendor route area + shell/layout + `roleGuard(['vendor'])`.
+2. Vendor dashboard screen wired to a vendor-summary read-model endpoint.
+3. Vendor product management UI.
+4. Vendor orders & fulfilment — `GET /orders/vendor` + `confirmed→processing` + `processing→handed_to_hb` transitions.
+5. Vendor onboarding UI — "become a vendor" → `POST /vendors` (no doc upload in v1).
+
+**Admin portal**
+6. Admin route area + shell/layout + `roleGuard(['admin'])` + **admin bootstrap endpoint**.
+7. Vendor approvals (keystone) — gating dependency for vendor portal.
+8. Admin catalog (platform listings) + category management UI.
+9. Admin user management — `admin/` module: list/search, activate/deactivate, role assign.
+10. Admin order oversight + dashboard metrics.
+11. Admin audit log — `audit_logs` table + `AuditService` + admin UI to view/filter the activity trail.

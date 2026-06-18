@@ -23,16 +23,28 @@ approved → suspended (and back, by admin)
 
 Only `approved` vendors can list products and receive orders (business rule — enforce in service layer).
 
+## V1 onboarding depth (confirmed 2026-06-18)
+
+**Document upload is NOT required for v1.** The existing `CreateVendorRequest` fields
+(`businessName`, `tradingName?`, `registrationNumber?`, `website?`, `description?`,
+`countryCode?`) are sufficient to create a `pending` vendor. `verificationDocumentUrl`
+on the `Vendor` entity remains optional and can be populated later.
+
+KYC / banking / verification-document review is a **future card** — leave the
+`verificationDocumentUrl` field in place but don't build upload/review UI in v1.
+
 ## Rules for agents
 
 - Never bypass the vendorId CHECK semantics in code paths that create/update products.
 - Vendor-facing queries must filter by ownership — a vendor sees only their own listings/orders.
 - Vendor status changes are admin-only actions (see [[Auth & Roles]]).
+- Vendor order/fulfilment transitions are limited — see [[Order State Machine]] for the
+  confirmed transition rights (vendor: `confirmed→processing`, `processing→handed_to_hb` only).
 
-## TBD (ask a human)
+## TBD (still open)
 
-- Vendor onboarding requirements (KYC, banking details).
 - Commission/fee structure per vendor sale.
 - Whether vendors can fulfil cross-border themselves or must use platform logistics.
+- KYC depth / banking details for vendor payout (deferred past v1).
 
 Related: [[HB Domain Model]] · [[Money & Currency Rules]]
