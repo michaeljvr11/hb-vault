@@ -26,7 +26,7 @@ snapshot below after each `/ship-card` cycle (run `npm run evidence` first).
 |---|---|
 | Requirements | Obsidian MCP + these business-rule notes |
 | Planning | `/ship-card` plan step + Trello board |
-| Design | Stitch MCP → design-to-code agent |
+| Design | Claude Design → design-to-code agent |
 | Implementation | backend / frontend engineers (sonnet) |
 | Testing | test-engineer + PR-gate hook |
 | Review | code-reviewer (opus) |
@@ -34,8 +34,9 @@ snapshot below after each `/ship-card` cycle (run `npm run evidence` first).
 | Safety | enforced hooks — prod fence, secrets fence
 _Source: `npm run evidence`. Refresh each cycle; the repo `REPORT.md` is the source of truth._
 
-- **22** commits (2026-06-11 → 2026-06-18); **17** carry the AI-authorship trailer (**77%**, climbing as the convention is followed)
-- **+19 328 / −776** authored lines across **287** files (generated lockfiles excluded)
-- **17** test specs (API 5 · Web 13)
-- Guardrails fired: **6** prod-fence blocks logged (push-to-main, force-push, `gh pr merge` — all human-only) · **1** green PR gate · **1** lint fixup
-- Traceability: cards `mMFxZIKE` (auth, PR #1) + `L9fM1Gu7` (storefront, PR #4) + `AP-6` (admin shell, PR #5) completed; Trello flow: To Do 5 · In Progress 0 · In Review 1 · Done 3 · Documentation 7
+## Snapshot (refreshed 2026-06-19, after VP-1)
+- **27** commits (2026-06-11 → 2026-06-18); **21** carry the AI-authorship trailer (**78%**, climbing as the convention is followed)
+- **+21 743 / −1 014** authored lines across **313** files (generated lockfiles excluded)
+- **21** test specs (API 5 · Web 16)
+- Guardrails fired: **8** prod-fence blocks logged (push-to-main ×6, force-push ×1, `gh pr merge` ×1 — all human-only) · **4** green PR gates (4 pass / 1 fail) · **4** lint fixups fed back to the agent
+- Traceability: cards `mMFxZIKE` (auth, PR #1) + `L9fM1Gu7` (storefront, PR #4) + `Z1ADCLQm` (admin shell, PR #5) merged; `EXPtZCJL` (vendor portal shell, PR #7) in review. Trello flow: To Do 14 · In Progress 1 · In Review 2 · Done 3 · Documentation 7
