@@ -23,7 +23,10 @@ loop and verifying Michael's Stitch → Claude Design migration.
   5. COMMIT DOCS to the Obsidian vault repo.
 - Documented the vault layout in CONTEXT: spec/decision notes at root; per-operator
   session logs under `History/Josh/` and `History/Michael/` as `session-<n>.md`.
-- Committed on branch `chore/loop-obsidian-session-history` (commit `5c973a6`).
+- Added the rule: **the vault always commits straight to `main` and pushes** (knowledge
+  base kept fresh); the project keeps its branch + PR flow.
+- Committed on branch `chore/loop-obsidian-session-history` (commit `a07120c`), pushed.
+- Removed the now-dead `stitch` MCP server from `.mcp.json` (local, gitignored, not shared).
 
 ## Claude Design integration — test outcome (PASS, with caveat)
 Pulled Michael's `130586b "migration from stitch to claude design system"` into main
@@ -37,10 +40,16 @@ Pulled Michael's `130586b "migration from stitch to claude design system"` into 
   live push needs an interactive `/login` (a `CLAUDE_CODE_OAUTH_TOKEN` session can't
   be granted design scopes). Not a defect.
 
+## Resolved this session
+- **Vault git is now set up** — `hb-vault` connected to `https://github.com/michaeljvr11/hb-vault.git`
+  (Michael's repo). This session log was committed straight to `main` and pushed.
+- **Dead `stitch` MCP server removed** from `.mcp.json` (local/gitignored).
+- **Missing `resend` dep** — `apps/api` declares `resend@^4.8.0` but `node_modules` was stale,
+  failing the API test gate. Ran `npm install`; suite green (22 tests). Pre-existing, not from
+  this change.
+
 ## Follow-ups
-- **Vault is not a git repo on this machine** — `hb-vault` has no `.git`, so this
-  session log could not be committed/pushed to the vault. Needs `git init` + remote
-  (or the agreed sharing mechanism) before the loop's COMMIT DOCS step can run.
-- `.mcp.json` still defines the `stitch` MCP server — now dead config post-migration;
-  Michael should decide whether to remove it (it carries a machine-specific path + key).
-- The loop change on `chore/loop-obsidian-session-history` is unpushed — open a PR when ready.
+- **Open the project PR** — `gh` is not installed and no API token is available, so the merge
+  request could not be auto-created. Branch is pushed; create it at:
+  https://github.com/michaeljvr11/hb-mono-repo/pull/new/chore/loop-obsidian-session-history
+- Consider installing `gh` so the `/ship-card` DELIVER step can open PRs unattended.
