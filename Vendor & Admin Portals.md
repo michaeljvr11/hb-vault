@@ -133,3 +133,17 @@ Every new endpoint input = a class-validator DTO implementing the shared interfa
 9. Admin user management — `admin/` module: list/search, activate/deactivate, role assign.
 10. Admin order oversight + dashboard metrics.
 11. Admin audit log — `audit_logs` table + `AuditService` + admin UI to view/filter the activity trail.
+
+## Implementation notes
+
+### Admin portal foundation — shell + bootstrap endpoint — 2026-06-18 (card AP-6 / Z1ADCLQm)
+
+**Backend — `POST /auth/bootstrap-admin`** (`@Public`): self-sealing one-time admin seed. Counts admins via new `UsersService.countByRole`; returns **409 Conflict** once any admin exists. Cannot be re-exploited. On success creates an admin user with `isVerified: true` (trusted setup action, exempt from order-gating verification) and returns the normal auth response — access token + httpOnly refresh cookie, identical to `/auth/login`. New shared contract `BootstrapAdminRequest`; `BootstrapAdminDto implements` it with class-validator `IsEmail` and `MinLength(8)`. Password hashed by the `User` `@BeforeInsert` hook like register. Bruno request "Bootstrap Admin" added for one-click first-time setup. Unit test asserts the 409-on-second-call gate (non-negotiable), admin creation, and email-collision (400).
+
+**Frontend — `/admin` route area**: lazy, `canActivate: [authGuard, roleGuard]`, `data: { roles: ['admin'] }` — unauthenticated and non-admin users are redirected to `/login` by the existing guards. Standalone signals-based, SSR-safe `AdminShell` (sticky top bar with H&B Market wordmark + "Admin Console" badge + sign-out; sidebar nav: Dashboard / Vendors / Catalog / Users / Orders / Logs with active-link highlight; `<router-outlet>` for children). Six lazy placeholder child pages; default child redirects to `dashboard`. Styled to the `admin-dashboard` Claude Design tokens; three new tokens registered in `docs/design/DESIGN.md` (`--hb-secondary-fixed`, `--hb-on-secondary-container`, `--hb-scrim`).
+
+**No schema change** — `users.role` and `users.isVerified` already exist.
+
+**Tests/review:** api 25/25, web 46/46, lint clean, full build clean. Code review: SHIP, no FAIL items (design-token nits addressed).
+
+**Follow-ups:** real admin screens replace the placeholders in later AP cards (AP-7 vendor approvals is next — the keystone).
