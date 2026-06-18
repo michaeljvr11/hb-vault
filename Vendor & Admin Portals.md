@@ -163,3 +163,13 @@ Non-vendor roles (`customer`, `admin`) and unauthenticated users are already red
 **Tests/build:** `npm run test -w @hb/web` 72/72 pass; `npm run lint:api` clean; `npm run build` (SSR) full pass. Code review verdict: **SHIP**, no FAIL items.
 
 **Out of scope (deferred):** real vendor dashboard/products/orders/profile screens, vendor-summary read-model endpoint, design polish, vendor onboarding flow (VP-5).
+
+### Vendor approvals (keystone) — 2026-06-19 (card AP-7 / DD6Z0NUW)
+
+**Backend (`@hb/shared` + API).** The admin approvals UI needs onboarding fields the public `VendorResponseDto` deliberately hides. Added `AdminVendorDto extends VendorDto` to `@hb/shared` (adds `registrationNumber?`, `website?`, `description?`, `verificationDocumentUrl?`, `appliedAt`). New `AdminVendorResponseDto implements AdminVendorDto` on the API. `VendorsService.findAll()` (the admin-only `GET /vendors`) now returns the richer shape via a new `toAdminResponseDto` mapper; `appliedAt` is `createdAt.toISOString()`. The public `GET /vendors/directory` and `GET /vendors/:id` stay on the lean `VendorResponseDto`, so registration numbers / verification docs never leak to non-admins. **No schema change** — every field already exists on the `vendors` entity.
+
+**Frontend.** Replaced the `admin/vendors` placeholder with the real keystone screen (`apps/web/src/app/features/admin/pages/admin-vendors/`): status filter tabs (All / Pending / Approved / Rejected / Suspended), a vendor list, and a detail panel (business/trading name, registration number, country, applied date, and `verificationDocumentUrl` as a link only when present). Status lifecycle is enforced in the UI by a pure, unit-tested `vendorActionsFor(status)` helper so only valid transitions are offered (pending→approve/reject, approved→suspend, suspended→re-approve, rejected→none); actions call `PATCH /vendors/:id/status` and update local signal state in place. Standalone, signals, new control flow, SSR-safe, styled to DESIGN.md tokens. `VendorsService.list()` retyped to `AdminVendorDto[]`.
+
+**Tests/review:** api 30/30, web 86/86, lint clean, full SSR build pass. Code review verdict **SHIP** — two WARNs fixed in-PR (honoured the `appliedAt: string` contract by dropping a dead null-guard; swapped a hardcoded error-banner hex for `--hb-error` + `color-mix`) plus a double-submit guard test.
+
+**Follow-ups:** unblocks real end-to-end vendor-portal testing. Document upload / KYC review still deferred (future card). Next admin card: AP-8 admin catalog.
