@@ -34,11 +34,11 @@ snapshot below after each `/ship-card` cycle (run `npm run evidence` first).
 | Safety | enforced hooks — prod fence, secrets fence |
 
 ## Snapshot — 2026-06-18
+Snapshot — 2026-06-18
 _Source: `npm run evidence`. Refresh each cycle; the repo `REPORT.md` is the source of truth._
 
-- **9** commits (2026-06-11 → 2026-06-18); **5** carry the AI-authorship trailer (**56%**, climbing as the convention is followed)
-- **+11 273 / −637** authored lines across **241** files (generated lockfiles excluded)
-- **8** test specs (API 1 · Web 7)
-- Guardrails fired: **3** prod-fence blocks logged (push-to-main, force-push, `gh pr merge` — all human-only)
-- Traceability: card `mMFxZIKE` → `feat/mMFxZIKE-login-registration-pages` → PR #1 (open)
-- Trello flow: To Do 6 · In Progress 0 · In Review 1 · Done 0 · Documentation 7
+- **17** commits (2026-06-11 → 2026-06-18); **11** carry the AI-authorship trailer (**65%**, climbing as the convention is followed)
+- **+19 328 / −776** authored lines across **287** files (generated lockfiles excluded)
+- **18** test specs (API 5 · Web 13)
+- Guardrails fired: **4** prod-fence blocks logged (push-to-main, force-push, `gh pr merge` — all human-only) · **1** green PR gate · **1** lint fixup
+- Traceability: cards `mMFxZIKE` (auth, PR #1) + `L9fM1Gu7` (storefront, PR #4) completed; Trello flow: To Do 5 · In Progress 0 · In Review 1 · Done 2 · Documentation 7
