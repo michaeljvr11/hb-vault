@@ -147,3 +147,19 @@ Every new endpoint input = a class-validator DTO implementing the shared interfa
 **Tests/review:** api 25/25, web 46/46, lint clean, full build clean. Code review: SHIP, no FAIL items (design-token nits addressed).
 
 **Follow-ups:** real admin screens replace the placeholders in later AP cards (AP-7 vendor approvals is next — the keystone).
+
+### Vendor portal foundation — route area + shell — 2026-06-19 (card VP-1 / EXPtZCJL)
+
+**Frontend only** — no backend changes. Uncommented and completed the `/vendor` lazy route in `apps/web/src/app/app.routes.ts`: `canActivate: [authGuard, roleGuard]`, `data: { roles: ['vendor'] }`, `loadComponent: () => VendorShell`, with four lazy child routes (`''` redirects to `dashboard`, plus `dashboard`, `products`, `orders`, `profile`).
+
+New standalone signals-based `VendorShell` component at `apps/web/src/app/features/vendor/vendor-shell/` — mirrors the merged `AdminShell` pattern exactly: sticky top bar with H&B Market wordmark + "Vendor Portal" badge + sign-out button; sidebar nav (Dashboard / Products / Orders / Profile) with active-link highlight; `sidebarOpen` signal + toggle/close on nav; `<router-outlet>` for child routes. SSR-safe — no browser APIs, only signals.
+
+Four lazy placeholder pages under `apps/web/src/app/features/vendor/pages/` (dashboard, products, orders, profile) — each returns "Coming soon" so child routes resolve without errors and later screens can swap in without route changes.
+
+Vitest spec mirrors `admin-shell.spec.ts`: renders shell, validates four nav labels + paths, verifies sidebar toggle/close, confirms signOut calls `AuthService.logout()`.
+
+Non-vendor roles (`customer`, `admin`) and unauthenticated users are already redirected to `/login` by the existing `authGuard` + `roleGuard` — no new guard code needed.
+
+**Tests/build:** `npm run test -w @hb/web` 72/72 pass; `npm run lint:api` clean; `npm run build` (SSR) full pass. Code review verdict: **SHIP**, no FAIL items.
+
+**Out of scope (deferred):** real vendor dashboard/products/orders/profile screens, vendor-summary read-model endpoint, design polish, vendor onboarding flow (VP-5).
