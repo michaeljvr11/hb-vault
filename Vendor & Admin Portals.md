@@ -210,3 +210,24 @@ Two sections behind a tab switcher: **Platform Listings** and **Categories**.
 Tests/review: web 119/119 pass, full SSR build clean (one non-blocking SCSS budget warning, same class as the tolerated `shop.scss`). Code review: **SHIP**, no FAILs; addressed a review nit by switching two hardcoded shadow `rgba()` literals to `color-mix` over tokens.
 
 **Follow-ups:** image editing on PATCH and an SCSS budget trim are deferred polish. Next admin cards: AP-9 (user management + `admin/` module), AP-10 (order oversight), AP-11 (audit log).
+
+
+### Admin portal — user management + admin NestJS module — 2026-06-19 (card AP-9 / N8P6OPPm)
+
+**Branch:** `feat/N8P6OPPm-admin-user-mgmt`
+**PR:** https://github.com/michaeljvr11/hb-mono-repo/pull/11
+**Status:** In Review
+
+#### What shipped
+- **`@hb/shared`**: Four new interfaces — `AdminUserDto` (extends `UserDto` + `isActive`, `createdAt`), `UpdateUserRoleRequest`, `SetUserActiveRequest`, `AdminUserListQuery`
+- **`apps/api/src/admin/`**: New `AdminModule` with `AdminService` + `AdminController` protected by `@Roles(UserRole.ADMIN)`. Endpoints: `GET /admin/users` (search + filter by role/isActive), `PATCH /admin/users/:id/role`, `PATCH /admin/users/:id/active`. Self-demotion guards: admins cannot change their own role or deactivate their own account.
+- **`apps/web`**: `UsersService` (HttpClient wrapper) + `AdminUsersComponent` with five filter tabs (All/Customer/Vendor/Admin/Inactive), text search, split list/detail layout, inline role `<select>`, Activate/Deactivate toggle with double-submit guard via `pendingId` signal.
+
+#### Tests
+- 17 new Jest unit tests in `admin.service.spec.ts` — list/filter/search, role update, activate/deactivate, self-demotion guards, not-found paths. 62 total passing.
+- 20 Vitest specs in `admin-users.spec.ts`.
+
+#### Key decisions
+- `AdminModule` uses `TypeOrmModule.forFeature([User])` and injects `Repository<User>` directly — avoids circular import that would result from importing `UsersModule`.
+- `requestingUserId` passed as explicit parameter to service methods (not extracted inside service) — keeps service testable without JWT context.
+- Self-deactivation blocked; self-role-change blocked; re-activation of own account allowed.
