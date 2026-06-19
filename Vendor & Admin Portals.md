@@ -173,3 +173,24 @@ Non-vendor roles (`customer`, `admin`) and unauthenticated users are already red
 **Tests/review:** api 30/30, web 86/86, lint clean, full SSR build pass. Code review verdict **SHIP** — two WARNs fixed in-PR (honoured the `appliedAt: string` contract by dropping a dead null-guard; swapped a hardcoded error-banner hex for `--hb-error` + `color-mix`) plus a double-submit guard test.
 
 **Follow-ups:** unblocks real end-to-end vendor-portal testing. Document upload / KYC review still deferred (future card). Next admin card: AP-8 admin catalog.
+
+
+### Vendor approvals — server-side lifecycle enforcement — 2026-06-19 (card RLiauFte, PR #9)
+
+AP-7 (above) shipped the approvals UI, but the status lifecycle lived **only** in the Angular
+`vendorActionsFor` helper. `VendorsService.updateStatus` persisted whatever status it was
+handed, so a direct `PATCH /vendors/:id/status` bypassed the keystone gate entirely — e.g.
+resurrecting a `rejected` vendor or re-approving an already-`approved` one. Since approval is
+the gating dependency for the whole vendor portal, that is a real authorization hole.
+
+Closed it by enforcing the lifecycle in the **service layer** (where the spec requires it):
+a `STATUS_TRANSITIONS` table mirroring the client one — `pending→approved/rejected`,
+`approved→suspended`, `suspended→approved`, `rejected` terminal — with illegal transitions
+rejected as **409 Conflict** before any write. The controller already carries
+`@Roles(UserRole.ADMIN)`, so the guard is admin-only. **No schema or contract change** (reuses
+`UpdateVendorStatusRequest`); the existing DTO whitelist and this from-state guard are
+complementary. 11 new unit tests cover the valid matrix, every illegal transition, and
+not-found. api 42/42, lint + build clean; code review **SHIP**.
+
+This satisfies the last unchecked requirement of slice 7 ("admin-only, service-layer
+validation"). Slice 7 is now complete end-to-end (UI = PR #8, server guard = PR #9).
