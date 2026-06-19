@@ -247,3 +247,22 @@ Tests/review: web 119/119 pass, full SSR build clean (one non-blocking SCSS budg
 **Tests/review.** api 45/45, web 141/141, lint clean, full SSR build clean (only the two pre-existing SCSS budget warnings, unrelated). Code review verdict **SHIP WITH NITS**, nits addressed in-PR (typed the test DTO to clear `no-unsafe-argument` warnings; made the 409 path load vendor status even if the user refresh errors).
 
 **Follow-ups.** Status-gate the vendor portal feature pages (dashboard/products/orders placeholders) by vendor status so a pending/rejected vendor can't use approved-only features; `vendors.businessName` is a `unique` column, so a duplicate business name currently yields a raw 500 rather than a friendly message (future card); document upload / KYC still deferred. This completes **slice 5** of the vendor-portal sequence.
+
+### Vendor product management UI — 2026-06-19 (card VP-3 / xEOk5i0M)
+
+**Branch:** `feat/xEOk5i0M-vendor-products`
+**PR:** https://github.com/michaeljvr11/hb-mono-repo/pull/14
+**Status:** In Review
+
+#### What shipped
+**Frontend only** — no backend or `@hb/shared` changes.
+
+Replaced the `VendorProducts` placeholder at `apps/web/src/app/features/vendor/pages/vendor-products/` with a full CRUD screen. The component loads `GET /vendors/me` to resolve the authenticated vendor's ID, then filters `GET /products` client-side to show only that vendor's own listings (`product.vendor?.id === vendorId()`). This keeps the trust boundary on the server (ownership enforced by `ProductsService`) while providing an appropriate vendor-scoped UX.
+
+**Create flow:** form calls `POST /products` with no `vendorId` in the payload — the server's `createWithImages` resolves `vendorId` from the auth token and forces `listingType: 'vendor'`. Image upload via `multipart/form-data` (existing `FilesInterceptor` + `uploads/` disk-storage flow). **Edit flow:** `PATCH /products/:id` (no image changes, matching admin-catalog). **Delete:** `DELETE /products/:id` with 2-step inline confirm; failed deletes surface an error banner (code-review WARN addressed).
+
+Standalone, signals-based, SSR-safe component; styled to `docs/design/DESIGN.md` tokens; follows the merged `AdminCatalog` pattern exactly (drawer form, table, SCSS conventions). Categories loaded for the form from `GET /categories`.
+
+**Tests/review:** 183/183 Vitest web tests pass; `npm run lint:api` clean; full SSR build clean. 21 new specs covering vendor-only filtering, create (asserts `vendorId` absent from payload — server must set it), edit, delete success + error paths. Code review verdict: **SHIP**, no FAIL items; two WARNs addressed in-PR (delete-error banner + delete-error tests).
+
+**Follow-ups:** image editing on PATCH (deferred, matching admin-catalog); category management is admin-only and not replicated here.
