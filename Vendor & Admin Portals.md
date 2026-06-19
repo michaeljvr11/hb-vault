@@ -194,3 +194,19 @@ not-found. api 42/42, lint + build clean; code review **SHIP**.
 
 This satisfies the last unchecked requirement of slice 7 ("admin-only, service-layer
 validation"). Slice 7 is now complete end-to-end (UI = PR #8, server guard = PR #9).
+
+### Admin catalog — platform listings + category management UI — 2026-06-19 (card AP-8 / IhTVdNYP)
+
+**Frontend only** — no backend or `@hb/shared` changes; the product/category CRUD endpoints and the web `ProductsService`/`CategoriesService` already existed and were reused.
+
+Replaced the `admin/catalog` placeholder with a real screen at `apps/web/src/app/features/admin/pages/admin-catalog/` (`.ts`/`.html`/`.scss`/`.spec.ts`), mirroring the merged `admin-vendors` pattern: standalone, signals-first, `inject()`, DESIGN.md tokens, separate template/style files, loading/error/empty states.
+
+Two sections behind a tab switcher: **Platform Listings** and **Categories**.
+
+**Listings:** list is a `computed()` filtered to `listingType === ListingType.PLATFORM` (vendor listings never shown). Create → `POST /products` (multipart image upload via existing disk-storage flow), edit → `PATCH /products/:id`, delete → `DELETE` with an inline two-step confirm. `vendorId` is never exposed or sent — the create/update payloads are explicit object literals that omit it; the server forces `listingType: 'platform'` for admins. (Note: the PATCH path does not handle image changes — only create uploads images.)
+
+**Categories:** full CRUD via the admin category endpoints (`name`, `slug?`, `description?`, `displayOrder?`, `parentId?`).
+
+Tests/review: web 119/119 pass, full SSR build clean (one non-blocking SCSS budget warning, same class as the tolerated `shop.scss`). Code review: **SHIP**, no FAILs; addressed a review nit by switching two hardcoded shadow `rgba()` literals to `color-mix` over tokens.
+
+**Follow-ups:** image editing on PATCH and an SCSS budget trim are deferred polish. Next admin cards: AP-9 (user management + `admin/` module), AP-10 (order oversight), AP-11 (audit log).
