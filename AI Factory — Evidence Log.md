@@ -34,9 +34,9 @@ snapshot below after each `/ship-card` cycle (run `npm run evidence` first).
 | Safety | enforced hooks — prod fence, secrets fence
 _Source: `npm run evidence`. Refresh each cycle; the repo `REPORT.md` is the source of truth._
 
-## Snapshot (refreshed 2026-06-19, after AP-7 lifecycle hardening / PR #9)
-- **33** commits (2026-06-11 → 2026-06-19); **27** carry the AI-authorship trailer (**82%**)
-- **+23 193 / −1 201** authored lines across **318** files (generated lockfiles excluded)
-- **22** test specs (API 5 · Web 17)
-- Guardrails fired: **9** prod-fence blocks logged (push-to-protected ×7, force-push ×1, `gh pr merge` ×1 — all human-only) · PR gate pass/fail tracked · agent edits logged by the lint hook
+## Snapshot (refreshed 2026-06-19, after AP-8 admin catalog / PR #10)
+- **36** commits (2026-06-11 → 2026-06-19); **30** carry the AI-authorship trailer (**83%**)
+- **+23 193 / −1 201** authored lines across **318** files (generated lockfiles excluded)
+- **23** test specs (API 5 · Web 18)
+- Guardrails fired: **11** prod-fence blocks logged (push-to-protected ×7, force-push ×1, `gh pr merge` ×1 — all human-only) · PR gate pass/fail tracked · agent edits logged by the lint hook
 - Traceability: cards `mMFxZIKE` (auth, PR #1) + `L9fM1Gu7` (storefront, PR #4) + `Z1ADCLQm` (admin shell, PR #5) + `EXPtZCJL` (vendor portal shell, PR #7) + `DD6Z0NUW` (vendor approvals UI, PR #8) merged; `RLiauFte` (vendor status lifecycle server-side enforcement, PR #9) in review. Slice 7 now complete end-to-end (UI PR #8 + server guard PR #9).
