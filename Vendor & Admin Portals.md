@@ -266,3 +266,28 @@ Standalone, signals-based, SSR-safe component; styled to `docs/design/DESIGN.md`
 **Tests/review:** 183/183 Vitest web tests pass; `npm run lint:api` clean; full SSR build clean. 21 new specs covering vendor-only filtering, create (asserts `vendorId` absent from payload — server must set it), edit, delete success + error paths. Code review verdict: **SHIP**, no FAIL items; two WARNs addressed in-PR (delete-error banner + delete-error tests).
 
 **Follow-ups:** image editing on PATCH (deferred, matching admin-catalog); category management is admin-only and not replicated here.
+
+### Vendor portal dashboard screen + read-model endpoint — 2026-06-20 (card VP-2 / oWqIV57s)
+
+**Branch:** `feat/oWqIV57s-vendor-dashboard`
+**PR:** https://github.com/michaeljvr11/hb-mono-repo/pull/15
+**Status:** In Review
+
+#### What shipped
+**Full-stack** — `@hb/shared` contract + API endpoint + Angular UI.
+
+**`@hb/shared`**: new `VendorDashboardDto` interface (`productCount: number`, `orderCountByStatus: Partial<Record<OrderStatus, number>>`, `totalRevenue: number`, `currency: CurrencyCode`) added to `libs/shared/src/contracts/vendor.ts`.
+
+**API (`apps/api/src/vendors`)**. `VendorDashboardResponseDto implements VendorDashboardDto`. `Product` and `OrderItem` repos injected directly into `VendorsService` via `TypeOrmModule.forFeature([Vendor, Product, OrderItem])` — same pattern as `AdminModule` (no circular deps). `getDashboard(userId)` sequentially: (1) resolves the vendor row by userId (throws 404 if none); (2) counts products with `productRepository.count({ where: { vendorId } })`; (3) aggregates total revenue with `SUM(CAST(oi.unitPrice AS decimal) * oi.quantity)` via QueryBuilder on `order_items` filtered by `vendorId`; (4) groups order-line counts by order status. Null aggregate → 0 (double-guarded: `?? '0'` + `|| 0`). Currency hardcoded `ZAR` (all order lines default to ZAR; NAD mixing deferred). `GET /vendors/me/dashboard` endpoint `@Roles(UserRole.VENDOR)`, registered before `GET /:id` so NestJS matches the literal path first. 7 new Jest unit tests: revenue from decimal string, null aggregate → 0, null field → 0, status grouping, ZAR currency, product count passthrough, 404 on missing profile. api 72/72.
+
+**Web (`apps/web`)**. `VendorsService.getDashboard()` → `GET /api/vendors/me/dashboard`. `VendorDashboard` component replaced placeholder with standalone, signals-based screen (no browser APIs — SSR-safe). State: `loading`, `error`, `dashboard` signals; `totalOrders` computed as sum of all status counts. Template: page header + "New Product" link → `../products`; 3 KPI cards (Total Products / Total Revenue / Total Orders); order-status breakdown chip grid (empty state when no orders); quick-link cards to Products and Orders. Styled to `docs/design/DESIGN.md` tokens throughout — no hardcoded colours. 13 Vitest specs in three top-level describe blocks (main, empty-state, error path). web 175/175.
+
+#### Key decisions
+- Counts order *line items* grouped by status (not distinct orders) — the read-model is for vendor fulfilment visibility; UI copy says "Order lines for your products" to match. Switching to `COUNT(DISTINCT o.id)` is a future follow-up.
+- Currency hardcoded to `ZAR` for this slice — all `order_items` default to ZAR; NAD-priced lines are future work.
+- Direct entity repo injection (not module import) to avoid circular dependencies, matching the AdminModule pattern from AP-9.
+
+#### Follow-ups
+- Switch `orderCountByStatus` to distinct-order count once the orders module has a real creation path (VP-4 / checkout card).
+- NAD mixed-currency aggregation once NAD-priced products exist.
+- `takeUntilDestroyed`/`toSignal` for the HTTP subscription (cosmetic — one-shot HTTP completes; no leak risk).
