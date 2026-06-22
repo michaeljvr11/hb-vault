@@ -330,3 +330,39 @@ Standalone, signals-based, SSR-safe component; styled to `docs/design/DESIGN.md`
 **Test/review outcome:** API 86/86 · Web 207/207 · lint clean · full build clean (only pre-existing SCSS warnings on `shop.scss` / `admin-catalog.scss`). Code review: **SHIP WITH NITS** — currency-symbol Record lookup + safe fallback, `CurrencyTotalDto` shipping-exclusion doc, test typo all addressed in-PR.
 
 **This completes slice 10** of the admin-portal vertical sequence.
+
+### Admin portal — audit log (activity trail + admin UI) — 2026-06-22 (card AP-11 / 7oPc1cnk, PR #17)
+
+**What shipped**
+- **`@hb/shared`**: new `contracts/audit.ts` — `AuditLogDto` (`id`, `userId`, `action`, `entityType`, `entityId`, `metadata`, `createdAt`), `AuditLogListQuery` (filters: `action?`, `entityType?`, `userId?`, `from?`, `to?`, pagination: `page`, `limit`), `AuditLogListDto` (`items`, `total`, `page`, `limit`, `pageCount`).
+- **`apps/api/src/audit/`**: a `@Global() AuditModule` (available to all feature modules without explicit import); `AuditService` with best-effort `log({ userId, action, entityType, entityId, metadata? })` (try/catch + `Logger.warn`, never throws into the caller) and a filtered/paginated `query(filters)` with server-side filtering; `AuditLog` entity (`audit_logs` table, `id` uuid PK, `userId` uuid FK, `action` varchar, `entityType` varchar, `entityId` varchar, `metadata` jsonb, `createdAt` timestamptz); indexed on `action`, `entityType`, `userId`, `createdAt` for query performance; `AuditAction` const map (`'user.role_assigned'`, `'user.activated'`, `'user.deactivated'`, `'vendor.status_changed'`, `'product.created'`, `'product.updated'`, `'product.deleted'`, `'admin.bootstrapped'`).
+- **Migration `1782086400000-AuditLog.ts`**: creates `audit_logs` table with `gen_random_uuid()` for id, `timestamptz` for createdAt, `jsonb` for metadata, all indexes; symmetric up/down (down drops table, idempotent).
+- **Wiring** — `AuditService.log()` called from:
+  - `AdminService.updateUserRole` (logs `'user.role_assigned'`, `entityType: 'user'`, `entityId: userId`, `metadata: { role }` — the new role).
+  - `AdminService.setUserActive` (logs `'user.activated'` or `'user.deactivated'`, `entityId: userId`).
+  - `VendorsService.updateStatus` (logs `'vendor.status_changed'`, `entityId: vendorId`, `metadata: { from, to }`); controller threads the acting admin's `userId` (from `@GetUser`) into the service call.
+  - `ProductsService.create` / `update` / `delete` (logs `'product.created'` / `'updated'` / `'deleted'`, `entityId: productId`, no metadata); `userId` is the authenticated user threaded from the controller via `@GetUser`.
+  - `AuthService.bootstrapAdmin` (logs `'admin.bootstrapped'`, `entityType: 'user'`, `entityId: newAdminId`, no metadata — no email/PII is logged); this is an `@Public` action so no prior user context — the new admin is both actor and subject.
+- **Backend endpoint**: `GET /admin/audit-logs` on `AdminController` (guarded with `@Roles(UserRole.ADMIN)`). Query params: `?action=...&entityType=...&userId=...&from=2026-06-20&to=2026-06-22&page=1&limit=50`. Server-side filtering in `AuditService.query()`; optional `from`/`to` are normalized — `to` is inclusive (bumped to end-of-day if only date provided). Response: `AuditLogListDto` with paginated items + total count.
+- **Frontend**: new `AuditService` in `core/api/` wraps `GET /admin/audit-logs`. Replaced the `admin-logs` placeholder page at `apps/web/src/app/features/admin/pages/admin-logs/` with a real standalone, signals-based, SSR-safe screen: filterable activity table (columns: `createdAt` timestamp, `userId` (the actor), `action`, `entityType`, `entityId`); filters (action dropdown, entityType dropdown, date-range picker `from`/`to`, userId text input); pagination (Prev/Next or limit selector); loading / empty / error states; styled to `docs/design/DESIGN.md` tokens, mirrors `admin-users` / `admin-vendors` pattern exactly.
+
+**Tests**
+- **`npm run test:api` 106 pass** — `audit.service.spec.ts` (12 new Jest tests): covers `log()` (best-effort catch, does not throw), `query()` with all filter combos (action, entityType, userId, date range), pagination, zero-data empties, metadata preservation.
+- **Wiring assertions**: `admin.service.spec.ts` (`updateUserRole` → `'user.role_assigned'`; `setUserActive` → `'user.activated'`/`'user.deactivated'`), `vendors.service.spec.ts` (`'vendor.status_changed'` on a valid transition, with `{ from, to }`), `auth.service.spec.ts` (`'admin.bootstrapped'` on bootstrap).
+- **`ProductsService`** audit wiring (create/update/delete) has no dedicated unit test yet — there is no `products.service.spec.ts`; a focused spec is a noted follow-up.
+- **`npm run test -w @hb/web` 272 pass** — `admin-logs.spec.ts` (24 new Vitest tests): renders filter form + table, filters trigger queries, pagination works, empty/error/loading states render correctly, metadata display fallback.
+- **Lint clean**, **full build clean** (only pre-existing SCSS budget warnings on `admin-catalog/shop.scss`).
+
+**Key decisions**
+- **`@Global() AuditModule`** chosen over exporting from `admin/` specifically: audit is a cross-cutting concern (vendors, products, users, orders all touch it), so a `@Global()` module avoids circular-import risk if, e.g., `OrdersModule` later imports both `VendorsService` and `AuditService`. The pattern is proven in the codebase (`TypeOrmModule` is `@Global()`).
+- **`log()` is best-effort** (try/catch + warn, never throws): an audit write must never break the business action that triggered it. If the audit table is full or the connection drops mid-write, the business-critical action (role change, vendor approval, product creation) still succeeds, and ops gets a warning to investigate. This is intentional defensive coding.
+- **Order-status transition logging is deferred** — the orders module is still a skeleton with no real `create` / `confirm` / `transition` mutations. Once VP-4 (checkout) or order-mutation cards land, wire `OrdersService` transitions (pending→confirmed, confirmed→processing, etc.) into the audit log. Placeholder hooks are not added; the future card will add them.
+- **Actor is displayed by `userId`** (the contract field in `AuditLogDto`); actor-email enrichment (joining `audit_logs.userId` → `users.email` in the query result or the Angular service layer) is a follow-up. For now, the admin sees "User ID `abc-123` activated user `def-456`" — less human-friendly but correct and unblocking.
+- **Date-only `to` filter normalized to end-of-day** — if the admin selects 2026-06-22 as the upper bound, they expect to see all actions on that day. The query interprets `to: "2026-06-22"` as `createdAt <= 2026-06-22 23:59:59.999Z` so the inclusive boundary includes the selected day.
+- **Metadata is JSONB, untyped in the response** — `AuditLogDto.metadata?: Record<string, unknown> | null`. Specific shapes (e.g. `{ role }` for role changes, `{ from, to }` for vendor status changes) live in service code, not enforced at the contract boundary. A future card can add a metadata key/value diff renderer in the UI.
+
+**Follow-ups**
+- Wire order-status logging once order mutations exist (VP-4 / checkout card, or a dedicated order-transitions card).
+- Actor-email enrichment — either a `POST /admin/audit-logs/enrich` endpoint that joins to the users table, or a client-side mapping service.
+- Metadata key/value diff renderer in the admin-logs UI (e.g., render `{ from, to }` status changes as "pending → approved" instead of raw JSON).
+- Search/export audit trail (deferred; full-text search on `action`, `entityType`, `userId` + CSV download are later UX niceties).
