@@ -34,9 +34,9 @@ snapshot below after each `/ship-card` cycle (run `npm run evidence` first).
 | Safety | enforced hooks — prod fence, secrets fence
 _Source: `npm run evidence`. Refresh each cycle; the repo `REPORT.md` is the source of truth._
 
-## Snapshot (refreshed 2026-06-19, after VP-5 vendor onboarding / PR #12)
-- **41** commits (2026-06-11 → 2026-06-19); **36** carry the AI-authorship trailer (**88%**)
-- **+28 176 / −1 541** authored lines across **336** files (generated lockfiles excluded)
-- **24** test specs (API 5 · Web 19)
-- Guardrails fired: **13** prod-fence blocks logged (push-to-protected ×10, force-push ×1, `gh pr merge` ×2 — all human-only) · PR gate pass/fail tracked · agent edits logged by the lint hook
-- Traceability: cards `mMFxZIKE` (auth, PR #1) + `L9fM1Gu7` (storefront, PR #4) + `Z1ADCLQm` (admin shell, PR #5) + `EXPtZCJL` (vendor portal shell, PR #7) + `DD6Z0NUW` (vendor approvals UI, PR #8) + `RLiauFte` (vendor status lifecycle, PR #9) + `IhTVdNYP` (admin catalog, PR #10) merged; `N8P6OPPm` (admin user management, PR #11) + `1fqtc2JF` (vendor onboarding VP-5, PR #12) in review.
+## Snapshot (refreshed 2026-06-22, after AP-10 admin orders dashboard / PR #16)
+- **51** commits (2026-06-11 → 2026-06-19); **46** carry the AI-authorship trailer (**90%**)
+- **+32 655 / −1 828** authored lines across **355** files (generated lockfiles excluded)
+- **29** test specs (API 7 · Web 22)
+- Guardrails fired: **14** prod-fence blocks logged (push-to-protected ×10, force-push ×1, `gh pr merge` ×2, merge/rebase on protected ×1 — all human-only) · **8** PR gate runs (pass/fail tracked) · **21** lint issues fed back to agent
+- Traceability: cards `mMFxZIKE` (auth, PR #1) + `L9fM1Gu7` (storefront, PR #4) + `Z1ADCLQm` (admin shell, PR #5) + `EXPtZCJL` (vendor portal shell, PR #7) + `DD6Z0NUW` (vendor approvals UI, PR #8) + `RLiauFte` (vendor status lifecycle, PR #9) + `IhTVdNYP` (admin catalog, PR #10) + `N8P6OPPm` (admin user management, PR #11) merged; `1fqtc2JF` (vendor onboarding VP-5, PR #12) + `oWqIV57s` (vendor dashboard VP-2, PR #15) + `xEOk5i0M` (vendor products VP-3, PR #14) + `sw8qYBV1` (admin orders AP-10, PR #16) in review.

@@ -291,3 +291,42 @@ Standalone, signals-based, SSR-safe component; styled to `docs/design/DESIGN.md`
 - Switch `orderCountByStatus` to distinct-order count once the orders module has a real creation path (VP-4 / checkout card).
 - NAD mixed-currency aggregation once NAD-priced products exist.
 - `takeUntilDestroyed`/`toSignal` for the HTTP subscription (cosmetic — one-shot HTTP completes; no leak risk).
+
+### Admin portal — order oversight + dashboard metrics — 2026-06-22 (card AP-10 / sw8qYBV1, PR #16)
+
+**Branch:** `feat/sw8qYBV1-admin-orders-dashboard`
+**PR:** https://github.com/michaeljvr11/hb-mono-repo/pull/16
+**Status:** In Review
+
+#### What shipped
+**Full-stack** — `@hb/shared` contracts + API read-only endpoints + Angular UI. No schema change, no migration.
+
+**`@hb/shared`**: Three new contracts added to `libs/shared/src/contracts/`:
+- `contracts/dashboard.ts`: `AdminDashboardDto` (pending vendor count, order totals, order counts by status, platform/vendor revenue grouped by currency), `CurrencyTotalDto`, `OrderStatusCountDto`.
+- `contracts/order.ts`: `AdminOrderListItemDto`, `AdminOrderListDto`, `AdminOrderListQuery`.
+
+**API (`apps/api/src/admin/`).** Read-only; no order mutations. `AdminModule` now registers `Order` / `OrderItem` / `Vendor` repos directly (same pattern as VP-2 to avoid circular imports). Two new endpoints:
+- `GET /admin/dashboard` — returns pending-vendor count, total orders, order counts zero-filled across **every** `OrderStatus` (including unmatched states), and platform vs vendor revenue **grouped by currency** (ZAR and NAD never summed; the 1:1 peg is data, not assumption per [[Money & Currency Rules]]). Cancelled orders contribute zero revenue. Numeric strings coerced via `Number()`.
+- `GET /admin/orders` — paginated list across all users/vendors (no ownership filter), filterable by `status` and `vendorId`. A vendor-filtered order keeps its full item set so `itemCount` and `vendorIds` remain accurate. Paginates in-memory at skeleton stage (DB-level pagination + query-level `vendorId` filter deferred to when order volume lands).
+
+**Non-negotiable revenue-aggregation suite:** 24 new Jest unit tests incl. platform/vendor split, per-currency grouping (ZAR/NAD not summed), cancelled orders excluded, numeric-string coercion, zero-data empties. api 86/86.
+
+**Web (`apps/web`).** New `core/api/admin-orders.service.ts` with `getDashboard()` and `listOrders(query)` (HttpParams built only from defined fields). Replaced placeholder Dashboard + Orders pages with real standalone, signals-based, SSR-safe screens (DESIGN.md tokens; mirrors `admin-users` / `admin-vendors` pattern).
+
+**Dashboard:** metric cards for pending-vendors (CTA → `/admin/vendors`), total orders, orders-by-status, per-currency platform/vendor revenue. Empty state renders zeros / "No orders yet" — never an error.
+
+**Orders:** paginated table (server-side `status` + `vendorId` filters), Prev/Next pagination, inline split list/detail panel. Zero-data state friendly, expected while orders module is skeleton. +66 Vitest specs. web 207/207.
+
+#### Key decisions
+- **AP-11 soft dependency only:** audit log is listed as "best shipped after" but not a blocker — AP-10 is read-only (no admin actions to audit). Real blockers were AP-6 + AP-9 (the `admin/` module foundation itself), both satisfied.
+- Revenue = line-item GMV (`unitPrice * quantity`), grouped by currency, excluding cancelled orders. Shippingfees excluded (documented on `CurrencyTotalDto`).
+- In-memory pagination at skeleton stage; DB-level + query-level filters follow when order volume arrives.
+
+#### Follow-ups
+- `GET /admin/orders`: DB-level pagination + query-level `vendorId` filter when checkout/order volume lands.
+- Dedicated `/admin/orders/:id` order-detail route once the orders/checkout module is real.
+- "Paid-only" revenue refinement (filter by payment status) once payments are real.
+
+**Test/review outcome:** API 86/86 · Web 207/207 · lint clean · full build clean (only pre-existing SCSS warnings on `shop.scss` / `admin-catalog.scss`). Code review: **SHIP WITH NITS** — currency-symbol Record lookup + safe fallback, `CurrencyTotalDto` shipping-exclusion doc, test typo all addressed in-PR.
+
+**This completes slice 10** of the admin-portal vertical sequence.
