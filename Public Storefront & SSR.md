@@ -117,3 +117,31 @@ so no new DTO is required.
 
 **Follow-ups:**
 - Currency/locale formatPrice card under storefront epic.
+
+### Slice 2 — Capture `returnUrl` in guards on redirect (2026-06-24, eOI6gKpN)
+
+**What shipped (frontend only):**
+- `apps/web/src/app/core/auth/auth-guard.ts` — redirect now `createUrlTree(['/login'], { queryParams: { returnUrl: state.url } })`. Uses the `CanActivateFn` `state.url` (the full attempted in-app path, query string included).
+- `apps/web/src/app/core/auth/guards/role-guard.ts` — same `returnUrl` capture on its unauthenticated/forbidden redirect to `/login`.
+- `apps/web/src/app/core/auth/return-url.ts` (new) — `sanitizeReturnUrl()` open-redirect guard: honours only same-app absolute paths (single leading `/`), rejects `//host`, `/\host`, any-backslash, and non-leading-slash/absolute URLs (`https:`, `javascript:`).
+- `apps/web/src/app/auth/login/login.ts` + `register.ts` — the `returnUrl` query param (attacker-controllable from the URL bar) now flows through `sanitizeReturnUrl`; unsafe values fall back to the default destination (`/shop`, or `/admin/dashboard` for admins on login).
+
+**Key decisions:**
+- **Capture at the guard, sanitise at the consumer.** `state.url` is inherently same-app (always `/…`), so the producing side needs no sanitising; the open-redirect risk lives only where the param is read back off the URL and fed to `navigateByUrl` — so the single sanitiser chokepoint sits in `return-url.ts`, shared by login + register.
+- **`navigateByUrl` keeps navigation inside the Angular router** (never a cross-origin full-page redirect), so the threat model is protocol-relative/backslash/absolute strings — all rejected. Code-reviewer confirmed the exploitable vectors are closed.
+- **Extended the settled guards, did not fork the auth flow** (per [[Auth & Roles]]). No `@hb/shared`, API, or migration change.
+
+**Tests & build:**
+- `auth-guard.spec.ts` + `role-guard.spec.ts` assert the redirect `UrlTree` carries the expected `returnUrl` (incl. query-string preservation, and both anonymous + forbidden-role paths for roleGuard).
+- `return-url.spec.ts` (new) covers the sanitiser (safe paths through; absolute/protocol-relative/backslash/relative rejected).
+- `login.spec.ts` + `register.spec.ts` cover the consuming side end-to-end: safe `returnUrl` honoured, external `returnUrl` falls back to default.
+- `npm run test -w @hb/web` → 285/285 passed. `npm run build` → clean. `npm run lint:api` → clean.
+
+**Code review outcome:**
+- FIX-FIRST → SHIP. One blocking finding: `register.ts` carried the same sanitised navigation as login but shipped without a test; added two register-side cases mirroring login. Remaining NITs (sanitiser passes harmless oddities like `/@host`, `/%2F%2Fhost`) confirmed non-exploitable via the router — left as-is.
+
+**PR:** _(to be linked)_ — open, awaiting human merge.
+
+**Remaining slices:**
+- Slice 3 (vs3y5tDJ): Public `GET /vendors/:id` (approved-only filter).
+- Slice 4 (EFXHykuT): Auth-aware storefront nav (sign-in link, account toggle, anonymous cart → `/login?returnUrl=…`). Now fully unblocked by this slice's `returnUrl` round-trip.
