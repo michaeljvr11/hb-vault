@@ -57,3 +57,30 @@ Related: [[HB Domain Model]] · [[Money & Currency Rules]]
 **Key decisions:** the endpoint has no pagination/filtering (cold-start MVP — can upgrade when storefront grows); vendor dto doesn't include logo/rating/city (model contract hasn't been extended; those visual elements from the Claude Design export are either omitted or derived client-side). The storefront's seed script (`npm run seed`) is all-or-nothing on category count — consider per-entity idempotency in a later refactor.
 
 **Related:** [[HB Domain Model]] · PR https://github.com/michaeljvr11/hb-mono-repo/pull/4
+
+### Approved-only filter extended to product catalogue (2026-06-29, card #36 c2o6xfZs)
+
+**Card #36 "Filter vendor listings by approved status on public product endpoints"** shipped via PR #23. The approved-only visibility rule for vendors (see slice above) is now extended to the public product catalogue. This gates the discovery and detail endpoints `GET /products` and `GET /products/:id` to ensure non-approved vendors' products are not exposed.
+
+**What shipped:**
+- `apps/api/src/products/products.service.ts` — `findAll` and `findOne` now filter public product results via a FindOptions `where` array-of-conditions (OR-of-AND): return products where `listingType = 'platform'` OR (`listingType = 'vendor'` AND `vendor.status = 'approved'`). Platform (first-party) listings always visible. Non-approved vendors' products are absent from `GET /products` and 404 on `GET /products/:id` (hits existing `NotFoundException`) — even when requested by direct id. Imports `VendorStatus` from `@hb/shared` (already exported).
+- `apps/api/src/products/products.service.spec.ts` — NEW, 14 unit tests covering both endpoints: `findAll` (platform always visible, approved vendors visible, pending/rejected/suspended excluded via real WHERE-array mock, exact where/relations assertion, empty repo, mixed fixture); `findOne` (platform + approved resolve, each non-approved status → 404 by direct id, unknown id → 404).
+
+**Key decisions:**
+- **Applied the same approved-only rule already shipped for vendors** (`GET /vendors/directory`, `GET /vendors/:id` in card vs3y5tDJ / PR #21) to maintain consistent public-facing logic.
+- **Service/query-layer filter, no controller change.** Reuses existing visibility pattern; no new endpoint created.
+- **Chose FindOptions array-of-conditions over QueryBuilder** for minimal diff. The `vendor` relation is ManyToOne so the nested-relation join is safe and does not truncate the eager `images`/ManyToMany `categories` collections.
+- **No `@hb/shared` change, no migration, no schema change.** All fields already existed; this is a visibility + filtering change only.
+
+**Tests & build:**
+- `npm run test:api` → 126 passed (+14 new in products.service.spec.ts).
+- `npm run test -w @hb/web` → 293 passed (no web files touched).
+- `npm run lint:api` → clean.
+- `npm run build` → clean (only pre-existing `shop.scss`/`admin-catalog.scss` budget warnings, unrelated).
+
+**Code review outcome:**
+- SHIP. No FAILs. One forward-looking follow-up (out of scope for #36, relevant to card #37 "Category filter + search on GET /products"): if `findAll` ever gains pagination, this FindOptions shape with collection joins would truncate `images`/`categories` and must move to a QueryBuilder with `relationLoadStrategy: 'query'` or distinct pagination. Card #37 also edits `findAll` and must AND its predicates with this approved-vendor filter so no non-approved listing leaks via any param.
+
+**PR:** #23 (https://github.com/michaeljvr11/hb-mono-repo/pull/23) — open, awaiting human merge.
+
+**Related:** [[Public Storefront & SSR]]

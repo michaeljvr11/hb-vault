@@ -34,9 +34,9 @@ snapshot below after each `/ship-card` cycle (run `npm run evidence` first).
 | Safety | enforced hooks — prod fence, secrets fence
 _Source: `npm run evidence`. Refresh each cycle; the repo `REPORT.md` is the source of truth._
 
-Snapshot (refreshed 2026-06-29, after EFXHykuT auth-aware storefront nav / PR #22 — Public Storefront & SSR epic complete)
-- **69** commits (2026-06-11 → 2026-06-29); **63** carry the AI-authorship trailer (**91%**)
-- **+36 621 / −2 521** authored lines across **373** files (generated lockfiles excluded)
-- **34** test specs (API **8** · Web **26**)
-- Guardrails fired: **16** prod-fence blocks logged (push-to-protected ×12, force-push ×1, `gh pr merge` ×2, merge/rebase on protected ×1 — all human-only) · **13** PR gate runs (12 pass / 1 fail) · **39** lint issues fed back to agent
-- Traceability: cards `mMFxZIKE` (auth, PR #1) + `L9fM1Gu7` (storefront, PR #4) + `Z1ADCLQm` (admin shell, PR #5) + `EXPtZCJL` (vendor portal shell, PR #7) + `DD6Z0NUW` (vendor approvals UI, PR #8) + `RLiauFte` (vendor status lifecycle, PR #9) + `IhTVdNYP` (admin catalog, PR #10) + `N8P6OPPm` (admin user management, PR #11) merged; `1fqtc2JF` (vendor onboarding VP-5, PR #12) + `oWqIV57s` (vendor dashboard VP-2, PR #15) + `xEOk5i0M` (vendor products VP-3, PR #14) + `sw8qYBV1` (admin orders AP-10, PR #16) + `7oPc1cnk` (admin audit log AP-11, PR #17) + `kYbVZyqV` (public storefront + SSR PS-1, PR #19) + `eOI6gKpN` (returnUrl guard capture PS-2, PR #20) + `vs3y5tDJ` (public vendor profile PS-3, PR #21) merged; `EFXHykuT` (auth-aware storefront nav PS-4, PR #22) **in review** — completes the Public Storefront & SSR epic.
+Snapshot (refreshed 2026-06-29, after c2o6xfZs approved-vendor product filter / PR #23)
+- **73** commits (2026-06-11 → 2026-06-29); **66** carry the AI-authorship trailer (**90%**)
+- **+37 046 / −2 597** authored lines across **374** files (generated lockfiles excluded)
+- **35** test specs (API **9** · Web **26**)
+- Guardrails fired: **16** prod-fence blocks logged (push-to-protected ×12, force-push ×1, `gh pr merge` ×2, merge/rebase on protected ×1 — all human-only) · **13** PR gate runs (12 pass / 1 fail) · **40** lint issues fed back to agent
+- Traceability: cards `mMFxZIKE` (auth, PR #1) + `L9fM1Gu7` (storefront, PR #4) + `Z1ADCLQm` (admin shell, PR #5) + `EXPtZCJL` (vendor portal shell, PR #7) + `DD6Z0NUW` (vendor approvals UI, PR #8) + `RLiauFte` (vendor status lifecycle, PR #9) + `IhTVdNYP` (admin catalog, PR #10) + `N8P6OPPm` (admin user management, PR #11) merged; `1fqtc2JF` (vendor onboarding VP-5, PR #12) + `oWqIV57s` (vendor dashboard VP-2, PR #15) + `xEOk5i0M` (vendor products VP-3, PR #14) + `sw8qYBV1` (admin orders AP-10, PR #16) + `7oPc1cnk` (admin audit log AP-11, PR #17) + `kYbVZyqV` (public storefront + SSR PS-1, PR #19) + `eOI6gKpN` (returnUrl guard capture PS-2, PR #20) + `vs3y5tDJ` (public vendor profile PS-3, PR #21) merged; `EFXHykuT` (auth-aware storefront nav PS-4, PR #22, completes the Public Storefront & SSR epic) + `c2o6xfZs` (approved-vendor product filter, PR #23) **in review**.
