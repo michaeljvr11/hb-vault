@@ -145,3 +145,55 @@ so no new DTO is required.
 **Remaining slices:**
 - Slice 3 (vs3y5tDJ): Public `GET /vendors/:id` (approved-only filter).
 - Slice 4 (EFXHykuT): Auth-aware storefront nav (sign-in link, account toggle, anonymous cart → `/login?returnUrl=…`). Now fully unblocked by this slice's `returnUrl` round-trip.
+### Slice 3 — Public `GET /vendors/:id` (approved-only) (2026-06-26, vs3y5tDJ)
+
+**What shipped:**
+- `apps/api/src/vendors/vendors.controller.ts` — added `@Public()` to `@Get(':id')` so SSR-rendered vendor-profile pages can fetch without a token. Route ordering already safe — `directory`, `me`, `me/dashboard` declared before `:id`.
+- `apps/api/src/vendors/vendors.service.ts` — `findOne` now queries `{ where: { id, status: VendorStatus.APPROVED } }`. Non-approved vendors hit `NotFoundException` → 404, matching `findDirectory` visibility. Response stays on the lean `VendorResponseDto` (no PII leak: `registrationNumber`/`verificationDocumentUrl` not exposed).
+- `apps/api/src/vendors/vendors.service.spec.ts` — new `describe('findOne (public vendor profile)')`: approved vendor returned & mapped to public DTO; PII fields omitted; each non-approved status → 404 (parametrised); unknown id → 404. Mock honours the `where` clause so the approved-only filter is genuinely exercised.
+
+**Key decisions:**
+- **Approved-only filter in the service (query layer).** Keeps data-access logic centralised; reusable if a future admin route needs a separate scoped lookup.
+- **No `@hb/shared` change, no migration.** All fields already exist; this is a visibility + filtering change.
+
+**Tests & build:**
+- `npm run test:api` → 112 passed (+6 new in vendors.service.spec.ts).
+- `npm run test -w @hb/web` → 285 passed (no web files touched).
+- `npm run lint:api` → clean.
+- `npm run build` → clean (shared → api → web).
+
+**Code review outcome:**
+- SHIP. No FAILs. One non-blocking note: if an admin single-vendor-detail view is ever needed it must be a separate admin-scoped route (this one returns the lean DTO and hides non-approved) — out of scope.
+
+**PR:** #21 (open, awaiting human merge).
+
+**Remaining slices:**
+- Slice 4 (EFXHykuT): Auth-aware storefront nav (sign-in link, account toggle, anonymous cart → `/login?returnUrl=…`).
+
+### Slice 4 — Auth-aware storefront nav (2026-06-29, EFXHykuT)
+
+**What shipped (frontend only — no `@hb/shared`, no API, no migration):**
+- `apps/web/src/app/layout/nav-bar/nav-bar.ts` + `.html` + `.scss` — the nav bar now reflects auth state via `AuthService.currentUser$`. Anonymous visitors see a **"Sign in"** link → `/login`; authenticated users see their **account name** (first name, falling back to email) + a **"Sign out"** control calling `AuthService.logout()`. Switches reactively on login/logout.
+- Anonymous **cart** click routes to `/login?returnUrl=<current url>` (via `Router.url`) — consumes the producing side of the slice‑2 returnUrl round‑trip so users return to the page they were browsing. Authenticated cart keeps the existing "coming soon" snackbar. Search left as "coming soon" (scope kept tight to cart per the card).
+- "Sell on H&B" → `/vendor/apply` entry preserved.
+- `apps/web/src/app/layout/nav-bar/nav-bar.spec.ts` — 10 Vitest specs (see below).
+
+**SSR / hydration safety (the crux):**
+- `/shop` is `RenderMode.Server` and the nav renders server-side in the anonymous state (no token on the server). Because `APP_INITIALIZER` populates `currentUser$` before the client bootstraps, a logged-in user's first client render would otherwise diverge from the anonymous server DOM and throw a hydration mismatch.
+- Fix: `toSignal(currentUser$, {initialValue:null})` + a `hydrated` signal flipped only inside `afterNextRender`, with `currentUser = computed(() => hydrated() ? user() : null)`. The server render and the initial client hydration pass are therefore both anonymous; the real auth state swaps in only after hydration.
+- No `window`/`localStorage`/`document` touched in the nav.
+
+**Security:**
+- `returnUrl` is set to `Router.url` (in-app, not attacker-controlled); `/login` independently sanitizes it via `sanitizeReturnUrl` (open-redirect guard from slice 2). No new vector.
+
+**Tests & build:**
+- `npm run test -w @hb/web` → **293 passed (26 files)**; `npm run test:api` → 112 passed; `npm run lint:api` clean; `npm run build` clean (only the pre-existing `shop.scss` / `admin-catalog.scss` budget warnings, unrelated).
+- Nav-bar specs cover: anonymous vs authenticated render, email fallback, reactive switch, `signOut()`→`logout()`, anonymous cart→`/login` with returnUrl, authenticated cart does not navigate, and "Sell on H&B" preserved.
+
+**Code review outcome:**
+- SHIP. No FAILs. Non-blocking nits noted: (1) the gate-closed/pre-hydration state isn't reliably unit-testable in jsdom (afterNextRender always runs in the browser test env; it simply never runs on the server) — verified by reasoning instead; a pre-hydration test was tried and reverted as misleading; (2) minor mobile a11y — the account name is `display:none` < 768px so only the (aria-hidden) person icon shows.
+
+**PR:** #22 (https://github.com/michaeljvr11/hb-mono-repo/pull/22) — open, awaiting human merge.
+
+**Epic status:**
+- This was the **last slice — the Public Storefront & SSR epic is now complete** (slices 1–4 all shipped: public `/shop`+SSR, returnUrl capture, public `GET /vendors/:id`, auth-aware nav).
