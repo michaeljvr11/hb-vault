@@ -15,6 +15,7 @@ JWT access token + **rotating hashed refresh token in an httpOnly cookie**. Glob
 ## Rules for agents
 
 - New protected endpoints: rely on the global guards + `@Roles`; never hand-roll auth checks in controllers.
+- **Role is never client-settable.** Self-registration is always `customer`; elevation happens only via the admin-only `PATCH /admin/users/:id/role` or vendor onboarding. New self-service DTOs must not accept `role`/`isActive`/`vendorId`. See repo-root `SECURITY.md` + the 2026-07-02 audit note below.
 - Ownership checks live in the service layer (e.g. vendor editing own product) — keep that pattern.
 - Frontend: `localStorage` access is platform-guarded (`isPlatformBrowser`) because of SSR. Auth state lives in `AuthService` — extend it, don't fork it.
 - Secrets stay in `apps/api/.env` (gitignored). Frontend env files hold only `apiBaseUrl` + flags.
@@ -75,3 +76,39 @@ The refresh cookie's `SameSite` attribute is now env-driven via `REFRESH_COOKIE_
 - **Production topology is still undecided**, so the config is switchable per environment — the call can be made at deploy time with no code change.
 
 Tests: `refresh-cookie.spec.ts` (6 cases: default / strict-prod / lax / none-forces-secure / whitespace / invalid-falls-back-to-strict); full auth suite 20/20. `.env.example` documents the knob.
+
+
+### Security audit & hardening — 2026-07-02 (branch `security/audit-2026-07-02`)
+
+Full security pass over auth / authZ / DB / web-security. Findings report lives at
+`docs/security/AUDIT-2026-07-02.md`; the auth model + new-route checklist now live in
+repo-root `SECURITY.md`. Most of the auth core reviewed as **already solid** (bcrypt-12,
+hashed single-use reset tokens, no user enumeration, rotating hashed refresh cookie,
+global-guard authZ, service-layer ownership, parameterized queries). Changes made:
+
+- **Critical — role mass-assignment on register (fixed).** `POST /auth/register` accepted
+  a validated `role` field, so anyone could self-register as `admin`. Removed `role` from
+  `RegisterRequest` / `RegisterDto` / the web form and force `CUSTOMER` in `AuthService`.
+  **New settled rule:** role is *never* client-settable — elevation only via the admin-only
+  `PATCH /admin/users/:id/role` or vendor onboarding.
+- **High — admin-bootstrap race (fixed).** `POST /auth/bootstrap-admin` is now gated by
+  `ADMIN_BOOTSTRAP_SECRET` (constant-time compare); **required in production** (endpoint
+  disabled if unset), zero-config in dev. This supersedes the "self-sealing is enough"
+  assumption — self-sealing left a first-caller-wins window on a fresh prod DB.
+- **High — rate limiting (added).** `@nestjs/throttler` global default (120/min/IP) + tighter
+  per-route limits on login/reset/verify/register/forgot/bootstrap. `trust proxy = 1` so
+  per-IP limits use the real client IP without X-Forwarded-For spoofing.
+- **Medium — security headers (added).** `helmet` with HSTS + conservative CSP;
+  `crossOriginResourcePolicy: cross-origin` so `/uploads` images still embed from the web app.
+- **Medium — Google OAuth (hardened).** Cookie-backed `state` store (login-CSRF defense
+  without express-session — fits our cookie architecture) + reject sign-in unless Google
+  reports the email verified (blocks account-takeover-by-linking).
+- **DB structure decision (unchanged, now documented).** Single `users` table + `role` enum
+  is **kept** — the real risk was the writable `role` column (the Critical above), not
+  co-location. Splitting admins out adds complexity without removing the mass-assignment
+  class of bug. See [[HB Domain Model]].
+- **Deferred:** access-token-in-`localStorage` → in-memory (frontend refactor; CSP added as
+  interim); transitive `multer@2.1.1` DoS bump (needs an isolated lockfile-regen PR).
+
+Enforcement going forward: `public-routes.guardrail.spec.ts` pins the exact set of
+`@Public()` routes (a new accidental public route fails CI). API 139/139, web 295/295, build clean.
