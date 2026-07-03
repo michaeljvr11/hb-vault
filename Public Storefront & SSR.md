@@ -197,3 +197,9 @@ so no new DTO is required.
 
 **Epic status:**
 - This was the **last slice — the Public Storefront & SSR epic is now complete** (slices 1–4 all shipped: public `/shop`+SSR, returnUrl capture, public `GET /vendors/:id`, auth-aware nav).
+
+---
+
+## Cross-note: product-detail & vendor-profile routes
+
+The `/products/:id` route component shipped in PR #26 (see [[Category Taxonomy & Discovery]] implementation notes for cards b4VoyjRu + 6qlkwk75). It is fully SSR-rendered, public, and consumes the category/vendor/search discover API. Vendor-profile page (`/vendors/:id`) design remains pending; follow-up card #40 UG5UFyxy (vendor profile page with stats/reviews) created on the board.

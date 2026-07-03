@@ -139,12 +139,63 @@ From [[Listing Types & Vendor Rules]], [[Public Storefront & SSR]] — enforce, 
 
 ---
 
+## Implementation Notes — Discovery API + storefront search UI (slices 1+2, cards b4VoyjRu + 6qlkwk75)
+
+**2026-07-02 — SHIPPED (PR #26)**
+
+**What shipped (single branch, owner-approved dual-card exception):**
+- **API discovery filters** — `GET /products` now accepts optional `?categoryId=`, `?q=`, `?vendorId=` query params validated by `ProductQueryDto` (implements `ProductQuery` in `@hb/shared`). Category filter matches products in that category; search is case-insensitive over product `name` + `description`; vendor filter narrows to a specific vendor's products. All compose together and with the approved-vendor-only visibility filter (via TypeORM Brackets).
+- **Unified suggest endpoint** — `GET /search/suggest?q=` (new module `apps/api/src/search/`) groups suggestions into `Products`, `Vendors`, `Categories` with product images/stats, vendor names/logos, category names. Populated from both approved vendors and platform listings.
+- **Storefront browse + search UI** — `/shop` rebuilt to desktop + NEW mobile designs; mobile sticky search + category chips deep-link to `/discover`. Category grid filters live on click. New omnibox search-bar with grouped suggestions + keyboard nav (arrow/Enter/Escape) + ARIA labels. Dismissible vendor chip on results.
+- **Shared component foundation** — product-card grid/carousel, category-chips, search-bar omnibox, trust-banner, vendor-showcase, radial-nav (Angular port of mobile design). 21 files, Material + design-token adherence.
+- **Product detail route** — new SSR route `/products/:id` with gallery, shipping card, vendor card (View Storefront→/discover?vendorId=), related products, sticky add-to-cart + anon→login returnUrl gate, 404 state. Single-currency price display (ProductDto has one price+currency).
+- **Discovery browse route** — new SSR route `/discover` with URL-driven state (q/categoryId/vendorId query params), SME client-side toggle (filters where product.vendor presence), distinct empty state for each filter combo.
+
+**Scope expansion (owner-approved):**
+- `vendorId` param + unified suggest endpoint shipped beyond spec v1. Owner requirement: "vendor-specific marketplace → users search vendors/categories/products". Vendor suggestions land on `/discover?vendorId=` (no vendor-profile page/design exists yet; created follow-up card #40 UG5UFyxy).
+- Product detail is single-currency (ProductDto has one price+currency). Design's dual ZAR/NAD parity display deferred — no peg source client-side. Future card for currency/locale handling.
+
+**Review finding — precedence bug + false-green regression:**
+- **THE BUG:** unparenthesized OR in SQL visibility clause let platform listings bypass ALL category/vendor/search filters (OR binds weaker than AND). Wrapped in TypeORM Brackets; all filters now properly AND together.
+- **FALSE-GREEN SPECS:** `ProductsService.findAll` tests used fake QueryBuilder lacking SQL AND/OR semantics, so the precedence bug was invisible. Added regression guards that fail on pre-fix code + precedence-faithful fake QueryBuilder.
+- **Lesson:** even with full mock coverage, semantic testing of query composition needs fake implementations that respect SQL operator precedence. The guardrails caught what unit test coverage missed.
+
+**Decisions (confirmed via review + owner):**
+- All filters compose via AND in a single query builder (no separate queries or client-side combining).
+- Approved-vendor visibility applies; vendors pending/rejected/suspended stay off discover.
+- Client-side SME toggle is UX-only (filters by product.vendor presence); no API gate.
+- Pagination/sort stays deferred (fast-follow card #44 rmpsJVLi created).
+
+**Contract/schema:** 
+- New `@hb/shared` `ProductQuery` interface + suggest response types.
+- No TypeORM schema change (all columns already exist).
+
+**Tests:**
+- `apps/api/src/products/products.service.spec.ts` — 12 new suites covering each filter in isolation + composition + approved-vendor AND-ing. False-green fake QueryBuilder replaced.
+- `apps/web/src/app/pages/discover/` + `products/` — 37 Vitest specs (discover state, routing, SME toggle, empty states, product-detail gallery/vendor-card/add-to-cart, anon→login return).
+
+**Test/build outcome:**
+- `npm run test:api` → 175 passed (12 suites).
+- `npm run test -w @hb/web` → 395 passed (37 files).
+- `npm run lint:api` → clean.
+- `npm run build` → clean.
+- **Code review:** FIX-FIRST (2 FAILs: precedence bug + false-green specs; 2 WARNs: SME badge color + param source). All addressed.
+
+**PR:** #26 (https://github.com/michaeljvr11/hb-mono-repo/pull/26) — open, awaiting human merge.
+
+**Follow-ups:**
+- Card #40 UG5UFyxy (vendor profile page with stats/reviews — vendor suggestions currently land on /discover?vendorId=).
+- Card #44 rmpsJVLi (pagination + sort — results unbounded in v1).
+- DesignSync push to claude.ai (needs interactive `/design-login`; deferred to Josh).
+
+---
+
 ## Vertical slices → Trello cards
-| # | Title | Layer | Card |
-|---|---|---|---|
-| 1 | Category filter + search on `GET /products` | api + shared | #37 `b4VoyjRu` |
-| 2 | Storefront: browse-by-category + search UI | web | #38 `6qlkwk75` |
-| 3 | Safe category delete (block in-use / parent) | api | #39 `Sm1kSNO8` |
+| # | Title | Layer | Card | Status |
+|---|---|---|---|---|
+| 1 | Category filter + search on `GET /products` | api + shared | #37 `b4VoyjRu` | SHIPPED (PR #26, fable-storefront-oneshot) |
+| 2 | Storefront: browse-by-category + search UI | web | #38 `6qlkwk75` | SHIPPED (PR #26, fable-storefront-oneshot) |
+| 3 | Safe category delete (block in-use / parent) | api | #39 `Sm1kSNO8` | SHIPPED (PR #24) |
 
 Recommended order: 1 → 2 (2 depends on 1). Slice 3 is independent and can run in parallel.
 Sequence slice 1 with card `c2o6xfZs` (#36) so the discovery filter and the approved-vendor
