@@ -34,9 +34,8 @@ snapshot below after each `/ship-card` cycle (run `npm run evidence` first).
 | Safety | enforced hooks — prod fence, secrets fence
 _Source: `npm run evidence`. Refresh each cycle; the repo `REPORT.md` is the source of truth._
 
-Snapshot (refreshed 2026-07-02, after b4VoyjRu + 6qlkwk75 discovery API + storefront UI / PR #26)
-- **85** commits (2026-06-11 → 2026-07-02); **76** carry the AI-authorship trailer (**89%**)
-- **+44 425 / −3 371** authored lines across **423** files (generated lockfiles excluded)
-- **49** test specs (API **12** · Web **37**)
-- Guardrails fired: **16** prod-fence blocks logged (push-to-protected ×12, force-push ×1, `gh pr merge` ×2, merge/rebase on protected ×1 — all human-only) · **12** PR gate runs (pass) · **65** lint issues fed back to agent
-- Traceability: cards `mMFxZIKE` (auth, PR #1) + `L9fM1Gu7` (storefront, PR #4) + `Z1ADCLQm` (admin shell, PR #5) + `EXPtZCJL` (vendor portal shell, PR #7) + `DD6Z0NUW` (vendor approvals UI, PR #8) + `RLiauFte` (vendor status lifecycle, PR #9) + `IhTVdNYP` (admin catalog, PR #10) + `N8P6OPPm` (admin user management, PR #11) merged; `1fqtc2JF` (vendor onboarding VP-5, PR #12) + `oWqIV57s` (vendor dashboard VP-2, PR #15) + `xEOk5i0M` (vendor products VP-3, PR #14) + `sw8qYBV1` (admin orders AP-10, PR #16) + `7oPc1cnk` (admin audit log AP-11, PR #17) + `kYbVZyqV` (public storefront + SSR PS-1, PR #19) + `eOI6gKpN` (returnUrl guard capture PS-2, PR #20) + `vs3y5tDJ` (public vendor profile PS-3, PR #21) merged; `EFXHykuT` (auth-aware storefront nav PS-4, PR #22, completes the Public Storefront & SSR epic) + `c2o6xfZs` (approved-vendor product filter, PR #23) + `Sm1kSNO8` (safe category delete — block in-use / parent categories, PR #24) merged; `b4VoyjRu` (discovery filters categoryId/q/vendorId + unified suggest) + `6qlkwk75` (storefront browse+search UI + product-detail) shipped together on `fable-storefront-oneshot` (PR #26) **awaiting human merge**.
+Snapshot (refreshed 2026-07-17, after MkRjnkvv admin synonyms UI / PR #29)
+- **111** commits (2026-06-11 → 2026-07-17); **102** carry the AI-authorship trailer (**92%**)
+- **68** test specs compiled from the repo
+- Guardrails fired: **16** prod-fence blocks logged (push-to-protected, force-push, `gh pr merge`, merge/rebase on protected — all human-only) · PR gate runs (pass) · lint issues fed back to agents
+- Traceability (latest): the Product Search Engine batch — cards `sI1Vaxp0` (#45 SearchModule + Meilisearch), `#46`/`#47` search contracts + indexer, `jphU7kkC` (#48 ProductSearchService), `ig9t1BQQ` (#49 synonyms load), `#50` search endpoints, `DyK4yTyp` (#52 synonyms admin CRUD + Meilisearch reload) merged — and now `MkRjnkvv` (#53 admin synonyms UI, PR #29) **awaiting human merge**. Prior epics (auth, storefront + SSR, vendor & admin portals, discovery) merged in full; see repo `REPORT.md` for the complete per-PR history.
