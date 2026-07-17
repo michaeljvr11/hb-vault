@@ -7,7 +7,6 @@ tags:
 ---
 
 # AI Factory — Evidence Log
-AI Factory — Evidence Log
 
 The auditable record of how AI tools built HB. This note is the **vault-side mirror** of
 the machine-generated report at `docs/ai-evidence/REPORT.md` in the repo. Refresh the
@@ -36,10 +35,11 @@ snapshot below after each `/ship-card` cycle (run `npm run evidence` first).
 | Review | code-reviewer (opus) |
 | Docs | docs-writer (haiku) + the evidence report |
 | Safety | enforced hooks — prod fence, secrets fence
+
 _Source: `npm run evidence`. Refresh each cycle; the repo `REPORT.md` is the source of truth._
 
-Snapshot (refreshed 2026-07-17, after PR #33 Customer Profile batch)
-- **128** commits (2026-06-11 → 2026-07-17); **118** carry the AI-authorship trailer (**92%**)
-- **75** test specs compiled from the repo
+Snapshot (refreshed 2026-07-17, after PR #34 Analytics & Reporting batch)
+- **139** commits (2026-06-11 → 2026-07-17); **129** carry the AI-authorship trailer (**93%**)
+- **80** test specs compiled from the repo
 - Guardrails fired: **17** prod-fence blocks logged (push-to-protected, force-push, `gh pr merge`, merge/rebase on protected — all human-only) · PR gate runs (pass) · lint issues fed back to agents
-- Traceability (latest): PR #33 Customer Profile batch (cards eq7ybOyS/U9C8764Y/1StR8MKR/xkD93Anr/uGvvSURk) — user profile endpoints + addresses CRUD + order history + address book UI; 7 commits; test/review SHIP. Earlier: Product Search Engine batch (cards `sI1Vaxp0` #45 SearchModule + Meilisearch, `jphU7kkC` #48 ProductSearchService, `ig9t1BQQ` #49 synonyms load, `DyK4yTyp` #52 synonyms admin CRUD + reload, `MkRjnkvv` #53 synonyms admin UI); admin portal/vendor portals/storefront+ SSR/auth epics merged in full; see repo `REPORT.md` for complete per-PR history.
+- Traceability (latest): PR #34 Analytics & Reporting batch (cards LKIGKUVM/FRtcp2dg/p0kVZMii/UC508IB6/ezkaNtbZ) — @hb/shared analytics contracts + event ingestion + storefront instrumentation + GA4 consent-gating + admin funnel/revenue dashboards + vendor analytics; 10 commits; test/review SHIP. Earlier: PR #33 Customer Profile batch (cards eq7ybOyS/U9C8764Y/1StR8MKR/xkD93Anr/uGvvSURk) — user profile endpoints + addresses CRUD + order history + address book UI; 7 commits; test/review SHIP. Earlier: Product Search Engine batch (cards `sI1Vaxp0` #45 SearchModule + Meilisearch, `jphU7kkC` #48 ProductSearchService, `ig9t1BQQ` #49 synonyms load, `DyK4yTyp` #52 synonyms admin CRUD + reload, `MkRjnkvv` #53 synonyms admin UI); admin portal/vendor portals/storefront+ SSR/auth epics merged in full; see repo `REPORT.md` for complete per-PR history.
