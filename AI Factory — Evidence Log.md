@@ -1,9 +1,13 @@
 ---
 type: process
-tags: [ai-factory, evidence, hackathon]
+tags:
+  - ai-factory
+  - evidence
+  - hackathon
 ---
 
 # AI Factory — Evidence Log
+AI Factory — Evidence Log
 
 The auditable record of how AI tools built HB. This note is the **vault-side mirror** of
 the machine-generated report at `docs/ai-evidence/REPORT.md` in the repo. Refresh the
@@ -34,8 +38,8 @@ snapshot below after each `/ship-card` cycle (run `npm run evidence` first).
 | Safety | enforced hooks — prod fence, secrets fence
 _Source: `npm run evidence`. Refresh each cycle; the repo `REPORT.md` is the source of truth._
 
-Snapshot (refreshed 2026-07-17, after MkRjnkvv admin synonyms UI / PR #29)
-- **111** commits (2026-06-11 → 2026-07-17); **102** carry the AI-authorship trailer (**92%**)
-- **68** test specs compiled from the repo
-- Guardrails fired: **16** prod-fence blocks logged (push-to-protected, force-push, `gh pr merge`, merge/rebase on protected — all human-only) · PR gate runs (pass) · lint issues fed back to agents
-- Traceability (latest): the Product Search Engine batch — cards `sI1Vaxp0` (#45 SearchModule + Meilisearch), `#46`/`#47` search contracts + indexer, `jphU7kkC` (#48 ProductSearchService), `ig9t1BQQ` (#49 synonyms load), `#50` search endpoints, `DyK4yTyp` (#52 synonyms admin CRUD + Meilisearch reload) merged — and now `MkRjnkvv` (#53 admin synonyms UI, PR #29) **awaiting human merge**. Prior epics (auth, storefront + SSR, vendor & admin portals, discovery) merged in full; see repo `REPORT.md` for the complete per-PR history.
+Snapshot (refreshed 2026-07-17, after PR #33 Customer Profile batch)
+- **128** commits (2026-06-11 → 2026-07-17); **118** carry the AI-authorship trailer (**92%**)
+- **75** test specs compiled from the repo
+- Guardrails fired: **17** prod-fence blocks logged (push-to-protected, force-push, `gh pr merge`, merge/rebase on protected — all human-only) · PR gate runs (pass) · lint issues fed back to agents
+- Traceability (latest): PR #33 Customer Profile batch (cards eq7ybOyS/U9C8764Y/1StR8MKR/xkD93Anr/uGvvSURk) — user profile endpoints + addresses CRUD + order history + address book UI; 7 commits; test/review SHIP. Earlier: Product Search Engine batch (cards `sI1Vaxp0` #45 SearchModule + Meilisearch, `jphU7kkC` #48 ProductSearchService, `ig9t1BQQ` #49 synonyms load, `DyK4yTyp` #52 synonyms admin CRUD + reload, `MkRjnkvv` #53 synonyms admin UI); admin portal/vendor portals/storefront+ SSR/auth epics merged in full; see repo `REPORT.md` for complete per-PR history.
