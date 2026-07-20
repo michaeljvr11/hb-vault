@@ -196,7 +196,56 @@ From [[Listing Types & Vendor Rules]], [[Public Storefront & SSR]] — enforce, 
 | 1 | Category filter + search on `GET /products` | api + shared | #37 `b4VoyjRu` | SHIPPED (PR #26, fable-storefront-oneshot) |
 | 2 | Storefront: browse-by-category + search UI | web | #38 `6qlkwk75` | SHIPPED (PR #26, fable-storefront-oneshot) |
 | 3 | Safe category delete (block in-use / parent) | api | #39 `Sm1kSNO8` | SHIPPED (PR #24) |
+| 4 | Pagination + sort on discovery / list views | shared + api + web | #44 `rmpsJVLi` | SHIPPED (PR #36) |
 
 Recommended order: 1 → 2 (2 depends on 1). Slice 3 is independent and can run in parallel.
 Sequence slice 1 with card `c2o6xfZs` (#36) so the discovery filter and the approved-vendor
-filter compose in one query builder.
+filter compose in one query builder. Slice 4 is a fast-follow to slices 1–2.
+
+
+---
+
+## Implementation Notes — Pagination + sort (fast-follow, card #44 rmpsJVLi)
+
+**2026-07-20 — SHIPPED (PR #36)**
+
+**Contract (`@hb/shared`):**
+- New generic envelope `PagedResponse<T> = { items: T[], total: number, page: number, limit: number }` in `libs/shared/src/contracts/common.ts`, barrel-exported.
+- New `ProductSort = 'newest' | 'price_asc' | 'price_desc' | 'name'` enum.
+- `ProductQuery` extended with optional `page`, `limit`, `sort` fields.
+
+**API (`GET /products` now paginated & sortable):**
+- Returns `PagedResponse<ProductDto>` (breaking change — all consumers updated same PR).
+- `ProductQueryDto` validates: `page`/`limit` as `@Type(() => Number) @IsInt @Min(1)` (deliberately **no** `@Max` — limit is server-clamped, not rejected); `sort` via `@IsIn(['newest', 'price_asc', 'price_desc', 'name'])`.
+- `ProductsService.findAll`: constants `DEFAULT_LIMIT=24`, `MAX_LIMIT=100`, `DEFAULT_PAGE=1`; logic: `limit = clamp(limit ?? 24, 1, 100)`, `page = max(page ?? 1, 1)`, `skip = (page-1)*limit`.
+- **Sort map:** `SORT_MAP` resolves each sort option to a primary column+direction, with `product.id` appended as a stable tiebreaker on every sort (preserves page integrity).
+- **Critical invariant:** ordering + skip/take appended **AFTER** the approved-vendor visibility Brackets clause and existing `categoryId`/`q`/`vendorId` predicates — no sort/page/filter combo can resurface unapproved vendor listings (regression-tested).
+- **Default order:** `newest` (createdAt DESC, id tiebreak) when `sort` omitted. Prior unordered behavior could not paginate stably; newest matches the shop "New in Namibia" carousel intent (confirmed via CLARIFY step).
+- Uses `getManyAndCount()` for envelope `total` (not separate count query).
+
+**Web (`ProductsService.list()` + consumers):**
+- `ProductsService.list()` returns the `PagedResponse` envelope and forwards `page`/`limit`/`sort`.
+- **Discovery route (`/discover`)** is fully URL-driven: `page` from `?page=`, `sort` from `?sort=` (parsed/validated, defaults 1/newest), composing with existing `q`/`categoryId`/`vendorId`. Features sort dropdown + Prev/Next pager ("Page X of Y"); pages **replace** (not accumulate) so `/discover?...&page=2` SSR-renders that exact slice. Changing any filter or sort resets to page 1. Out-of-range `?page=` self-heals via redirect to last valid page.
+- **Other list consumers** (`shop` carousel + category counts, `vendor-profile`, `vendor-products`, `admin-catalog`, `product-detail` related list) read `.items` and pass explicit `limit: 100` (`PRODUCT_LIST_MAX`) to avoid truncating at default 24.
+- No migration (contracts + query only).
+
+**Tests/review:**
+- `npm run test:api` → 435 passed (new suite: pagination math, sort map resolution, invariant: unapproved vendors remain invisible across all sort/page combos, DEFAULT_LIMIT/MAX_LIMIT behavior).
+- `npm run test -w @hb/web` → 613 passed (new discover pagination UI, sort dropdown, Prev/Next pager, out-of-range redirect, page reset on filter change, list consumers reading `.items`).
+- `npm run lint:api` → clean.
+- `npm run build` (shared→api→web) → passes.
+- **Code review:** SHIP; one WARN (out-of-range page dead-end) was fixed (self-heal redirect).
+
+**Decisions (from CLARIFY confirmation):**
+- Default order = **newest-first** (createdAt DESC) when `sort` omitted — required deterministic default to avoid page-0 instability.
+- Envelope generic `PagedResponse<T>` reusable across future paginated endpoints.
+- Clamp-not-reject limit (400 on invalid limit is worse UX than silently clamping).
+- Stable tiebreaker (`product.id` appended to every sort) — necessary for predictable page boundaries.
+- List consumers cap at `limit: 100` (fine below 100 products; candidate for real pager if shop/vendor/admin-catalog exceed that volume).
+
+**Follow-ups (deferred, bounded):**
+- Shop's client-side category counts degrade above 100 products (candidate for server-side aggregate-count endpoint or real pager).
+- Case-insensitive `name` sort (`LOWER(name)`) deferred — risks the `getManyAndCount` DISTINCT-pagination SQL; can revisit if UX pressure mounts.
+- Minor constant-consolidation nits (e.g., `PRODUCT_LIST_MAX` as a named constant in schema/contracts).
+
+**PR:** #36 (https://github.com/michaeljvr11/hb-mono-repo/pull/36) — open, awaiting human merge.
