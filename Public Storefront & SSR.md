@@ -196,10 +196,29 @@ so no new DTO is required.
 **PR:** #22 (https://github.com/michaeljvr11/hb-mono-repo/pull/22) — open, awaiting human merge.
 
 **Epic status:**
-- This was the **last slice — the Public Storefront & SSR epic is now complete** (slices 1–4 all shipped: public `/shop`+SSR, returnUrl capture, public `GET /vendors/:id`, auth-aware nav).
+- This was the **last slice — the Public StorefrontThe `/products/:id` route component shipped in PR #26 (see [[Category Taxonomy & Discovery]] implementation notes for cards b4VoyjRu + 6qlkwk75). It is fully SSR-rendered, public, and consumes the category/vendor/search discover API. Vendor-profile page (`/vendors/:id`) shipped in PR #35 (card #40 UG5UFyxy); see slice 5 notes below.
 
----
+### Slice 5 — Public vendor profile page (2026-07-20, UG5UFyxy)
 
-## Cross-note: product-detail & vendor-profile routes
+**What shipped:**
+- New standalone Angular component `PublicVendorProfile` at `apps/web/src/app/features/vendors/vendor-profile/` (plural `vendors/` — deliberately separate from the vendor-portal `features/vendor/pages/vendor-profile/`). Signals, OnPush, `:id`-param-driven, SSR-safe (HttpClient relative URLs, no browser globals).
+- Fetches the vendor via `VendorsService.getById` (public `GET /vendors/:id`, approved-only, shipped in slice 3 / PR #21) and its listings via `ProductsService.list({ vendorId })`. Vendor states loading/loaded/not-found(404)/error; product-grid states loading/loaded/empty/error.
+- Hero: business name, optional trading name, a "Verified SME" badge (every vendor the public endpoint returns is APPROVED, so all are verified), country label from `countryCode`. Category-tag chips **derived client-side** (distinct product categories across the vendor's listings, de-duped by id). Product grid reuses the shared `ProductCard`. Anonymous add-to-cart routes to `/login?returnUrl=…` (the established slice-2 boundary).
+- Route `/vendors/:id` is public (no guard), placed before the `**` catch-all in `app.routes.ts`, and `RenderMode.Server` in `app.routes.server.ts`.
+- Re-pointed the three "visit this vendor" affordances from `/discover?vendorId=` → `/vendors/:id`: product-detail `viewStorefront()`, the discover omnibox "Vendors" suggestion, and the shop-home vendor-showcase tiles (`shop.onVendorSelect`).
+- Design artifact authored (no Claude Design source, login unavailable): `docs/design/claude-design/screens/vendor-profile/index.html` + mirror `docs/design/vendor-profile/export.html`.
 
-The `/products/:id` route component shipped in PR #26 (see [[Category Taxonomy & Discovery]] implementation notes for cards b4VoyjRu + 6qlkwk75). It is fully SSR-rendered, public, and consumes the category/vendor/search discover API. Vendor-profile page (`/vendors/:id`) design remains pending; follow-up card #40 UG5UFyxy (vendor profile page with stats/reviews) created on the board.
+**Key decisions:**
+- **No `@hb/shared` / API change.** The public `VendorResponseDto` returns only `{ id, businessName, tradingName?, status, countryCode }`, so the page is built from those + client-derived category chips. A free-text "about" section was intentionally omitted rather than expand the contract (the card scoped this as web+design only).
+- Re-point scope was clarified with the developer: **all three** affordances move to the new page; the discover `?vendorId=` filter machinery is left intact so shared/deep-linked `/discover?vendorId=` URLs still work.
+- Component named `PublicVendorProfile` (renamed from `VendorProfile` during review) to avoid a duplicate class name with the vendor-portal page.
+
+**SSR safety:** param-driven from the route, no `window`/`localStorage`/`document`, follows the discover/PDP pattern; `RenderMode.Server`.
+
+**Tests & build:** new `vendor-profile.spec.ts` (happy path incl. products fetched by `vendorId`, not-found via 404 + missing id, generic error, empty state, category-chip de-dupe, country-label mapping, anonymous add-to-cart→/login gate) + updated `product-detail`/`discover`/`shop` re-point specs. `npm run test -w @hb/web` 600/600; `npm run test:api` 406/406 (API untouched); `npm run lint:api` clean; `npm run build` clean (only the pre-existing `admin-catalog.scss` budget warning).
+
+**Code review outcome:** SHIP, no FAILs. Applied two NITs (rename to `PublicVendorProfile`; SME-badge border derived from `--hb-primary` via `color-mix` instead of a hardcoded rgba). Left the `route.paramMap.subscribe` `takeUntilDestroyed` NIT to match the existing `product-detail` sibling pattern (route paramMap completes on teardown — no real leak).
+
+**PR:** #35 (https://github.com/michaeljvr11/hb-mono-repo/pull/35) — open, awaiting human merge.
+
+**Follow-ups:** `docs/design/vendor-profile/reference.png` screenshot not captured (Docker Desktop wasn't running locally, so the full stack couldn't be brought up for a live SSR screenshot); optionally list `vendor-profile` as implemented in `apps/web/CLAUDE.md` + the `DESIGN.md` screens table.
