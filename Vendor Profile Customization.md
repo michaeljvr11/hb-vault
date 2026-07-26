@@ -242,3 +242,49 @@ Card moved to "In Review" pending human merge approval.
 - Stale `profileSections` ids not re-validated at read time (degrade gracefully); candidate for future validation pass if UX signals a need.
 - `vendorId` could theoretically be undefined in ownership-check query filter (though currently unreachable code path); minor defensive guard candidate.
 - Some DTO duplication (`VendorResponseDto` + `VendorSelfResponseDto` + admin variant) noted; candidate for a future refactor pass, not urgent.
+
+
+**VPC-2 shipped** (Trello AAjMPwV7, July 2026). Backend upload endpoints for vendor logo and banner images. All tests/lint/build green; PR opened; moved to "In Review".
+
+### What shipped
+
+**Two new multipart upload endpoints on `VendorsController` (`apps/api/src/vendors/vendors.controller.ts`):**
+- `POST /vendors/me/logo` — `@Roles(UserRole.VENDOR)`, `FileInterceptor('file', vendorImageMulterOptions)`, owner-scoped strictly via `@GetUser()` (never a client-supplied id) — same ownership idiom as `GET /vendors/me`.
+- `POST /vendors/me/banner` — identical guard and pattern.
+
+**New upload infrastructure (`apps/api/src/vendors/upload/`):**
+- `vendor-image.multer.config.ts` — Multer disk storage into `uploads/vendors`, 5MB cap, mimetype filter (`jpg|jpeg|png|webp`), extension derived from a fixed mimetype→extension allow-list (not from client-supplied `originalname`). Mirrors the existing `products/upload/` pattern but fixes a critical extension-injection bug (see security note below).
+- `vendor-image-file.pipe.ts` — shared `ParseFilePipeBuilder` pipe with `FileTypeValidator` configured for disk-stored uploads via `fallbackToMimetype: true` (required; NestJS magic-number validation reads `file.buffer` which is empty under `diskStorage` — without the fallback, all uploads were silently rejected after Multer had already written the file).
+
+**Service-layer image write (`VendorsService.updateLogo` / `updateBanner`):**
+- Private `updateBrandingImage(userId, field, file)` — finds vendor by `userId` (404 if missing), retrieves file URL via `FileUrlService.getFileUrl(filename, 'vendors')`, persists URL to the vendor row (updates `logoUrl` or `bannerUrl` column), returns `VendorSelfResponseDto` for response-shape consistency with `GET /vendors/me`.
+- `FileUrlService` (reused from products module) registered as an additional provider in `VendorsModule` — not duplicated.
+- No schema or contract changes — `logoUrl`/`bannerUrl` columns and the self-view DTO already existed from VPC-1.
+
+**Two critical security bugs discovered during review and fixed in this PR (reusable lessons):**
+
+1. **NestJS `FileTypeValidator` + diskStorage silent rejection bug:** The validator does magic-number validation by reading `file.buffer`. Under Multer's `diskStorage` (not `memoryStorage`), `file.buffer` is never populated — only `file.filename` is set. Without `fallbackToMimetype: true` on `ParseFilePipeBuilder`, every disk-stored file was silently rejected with a false 422, *after* Multer had already written the file to disk. **Fixed:** added `fallbackToMimetype: true` to the pipe config, verified against the installed NestJS source, and added regression tests (`vendor-image-file.pipe.spec.ts`).
+
+2. **Extension-injection vulnerability in Multer filename callback:** The pre-existing `products/upload/multer.config.ts` (and initially replicated in VPC-2's config) derived the stored file's extension from the client-supplied `originalname`, gated only by a `mimetype` regex check. Since `mimetype` is client-supplied and `uploads/` is served statically from the API origin (same origin as the httpOnly refresh cookie), a crafted request with `allowedMimetype + originalname: 'x.html'` could persist and later serve back as `text/html` from the API origin, enabling a stored XSS attack against the refresh token. **Fixed:** VPC-2's config now derives the extension from a fixed mimetype→extension allow-list instead of `extname(originalname)`. **Follow-up:** the identical bug exists in the pre-existing `products/upload/multer.config.ts` (flagged separately, not fixed in this PR — out of scope).
+
+### Out of scope (by design)
+
+- No portal image-upload UI widget (built in VPC-3).
+- No orphan-file cleanup on image replace (old logo/banner not unlinked from disk) — matches existing products-upload behaviour, consistent rather than a regression, left as-is.
+- Frontend sections (VPC-3/4/5) untouched.
+
+### Review outcome
+
+- **Round 1:** FIX-FIRST. Two critical security/correctness issues found and fixed: the `fallbackToMimetype` silent rejection bug, and the extension-injection vulnerability. Plus coverage: ensure regression tests prevent reverts, confirm both bugs against installed source.
+- **Round 2:** SHIP. Both fixes verified; new tests for the regression cases added (`vendor-image-file.pipe.spec.ts`, extended `vendor-image.multer.config.spec.ts`). Full vendors test suite: 5 suites / 95 tests green. `npm run lint:api` clean. `npm run build` clean. One pre-existing, unrelated test-suite failure noted (`search/search-visibility.integration.spec.ts`, a DI resolution issue) — confirmed independently of this branch via `git stash`, flagged separately, not touched here.
+
+### PR + card status
+
+PR link: [see Trello card comment / link — lead will fill in].
+Card moved to "In Review" pending human merge approval.
+
+### Follow-ups (non-blocking)
+
+- VPC-3 (portal profile editor with upload widget) now unblocked.
+- **Products-upload extension bug:** the identical extension-injection vulnerability exists in `apps/api/src/products/upload/multer.config.ts` (pre-existing, discovered during VPC-2 review). Flagged as a separate follow-up task — medium priority, same fix pattern.
+- Minor advisory notes from review (collapsing `productImageMulterOptions` / `vendorImageMulterOptions` into a shared helper, exporting `FileUrlService` from a shared module) — not urgent, candidate for future refactor.
