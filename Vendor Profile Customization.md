@@ -288,3 +288,49 @@ Card moved to "In Review" pending human merge approval.
 - VPC-3 (portal profile editor with upload widget) now unblocked.
 - **Products-upload extension bug:** the identical extension-injection vulnerability exists in `apps/api/src/products/upload/multer.config.ts` (pre-existing, discovered during VPC-2 review). Flagged as a separate follow-up task — medium priority, same fix pattern.
 - Minor advisory notes from review (collapsing `productImageMulterOptions` / `vendorImageMulterOptions` into a shared helper, exporting `FileUrlService` from a shared module) — not urgent, candidate for future refactor.
+
+
+**VPC-3 shipped** (Trello y3fz4TC2, July 2026). Frontend portal editor for vendor profile — text fields + image uploads. All tests/lint/build green; PR opened; moved to "In Review".
+
+### What shipped
+
+**Vendor profile portal editor** (`apps/web/src/app/features/vendor/pages/vendor-profile/`):
+- Replaced `Coming soon` placeholder with a real reactive form component; follows the sibling `vendor-products` portal-page pattern.
+- `VendorsService` (`apps/web/src/app/core/api/vendors.service.ts`): `getMe()` widened to return `VendorSelfDto` (was `VendorDto`); `update()` widened to return `VendorSelfDto` (server already returns the self-view from `PATCH /vendors/:id`, trusting response avoids re-deriving state client-side). New `uploadLogo(file)` / `uploadBanner(file)` multipart POST to `/vendors/me/logo` and `/vendors/me/banner` (field name `file`).
+- **`VendorProfile` component** (`.ts`/`.html`/`.scss`):
+  - Typed reactive form: `businessName` (required), `tradingName`, `website`, `description`, `slogan` (client `maxLength(120)` mirrors VPC-1 server cap).
+  - Save via `PATCH /vendors/:id`; pending/success/error signal state + no-double-submit guard.
+  - Blank optional fields normalised to `undefined` before PATCH (not sent as empty strings).
+  - **Logo/banner upload unified handler** (`private uploadImage(kind, event)`): file-input change → client-side 5MB size check → local `URL.createObjectURL` preview (SSR-guarded via `isPlatformBrowser`) → multipart upload → on success, server response replaces vendor state (object URL revoked); on error, rejected blob preview discarded, falling back to last-persisted image (bug fix — see review outcome below).
+  - Styled to `docs/design/DESIGN.md` tokens; reuses existing portal-shell visual language (matches `admin-catalog` / `vendor-products`). No new Claude Design export needed.
+  - Out of scope by design: `profileSections` (section builder) — that is VPC-4.
+
+### Key decisions
+
+- **No MatSnackBar** — matches existing codebase convention (no Material snackbar usage); kept `.error-banner` / `.success-banner` plain-div pattern used by `vendor-products`, `profile-addresses`, etc.
+- **Immediate upload on file selection** — instant local preview, swap to server URL on success; single filepicker (no separate upload button). Low-friction pattern.
+- **Trust server response for state** — avoid manual field-merging; widened service to return `VendorSelfDto` ensures form state tracks the authoritative server state post-save.
+- **Unified logo/banner handler** — one `uploadImage(kind, event)` method handles both paths (previously duplicated). Reduces maintenance burden.
+
+### Review outcome
+
+- **Round 1:** FIX-FIRST. Two real bugs found and fixed in a follow-up commit:
+  1. **Upload error left blob preview rendered:** Failed logo/banner upload left the rejected local blob preview rendered as live (and leaked the object URL). Error handler did not reset the preview signal the way success handler did. **Fixed:** reset and revoke preview in both success and error branches.
+  2. **Form state echoed local values, not server response:** Save handler propagated local raw form values (`website`, `description`) back into component state after a successful PATCH instead of trusting the server response. Happened because it was typed against generic `VendorDto` rather than self-view. **Fixed:** widened `VendorsService.update()` to return `VendorSelfDto` and use the response directly; deleted ~10 lines of manual field-merging.
+  3. (Also addressed in the same pass: unified logo/banner upload handlers, added client-side 5MB pre-check, normalised blank optional fields to `undefined`, cleared stale success/error banners when user resumes editing after a save.)
+- **Round 2:** SHIP. All findings addressed; tests/lint/build green.
+
+### Test coverage
+
+- `VendorProfile` component spec (`vendor-profile.spec.ts`): form load/populate, save payload shape (incl. blank-field omission), save success trusts server response, save error, required-field guard, double-submit guard, slogan `maxLength` boundary, stale-banner-clears-on-edit, logo/banner upload success + preview lifecycle + error-resets-to-persisted-image, client-side size-limit rejection, load-error path.
+- `VendorsService` spec additions (`vendors.service.spec.ts`): `getMe()` self-view shape, `update()` self-view shape, `uploadLogo()` / `uploadBanner()` multipart request shape.
+- Full suite: **638 tests / 55 files green**. `npm run build` clean (pre-existing unrelated SCSS budget warning on `admin-catalog`, not touched). `npm run lint:api` clean.
+
+### PR + card status
+
+PR link: [see Trello card comment / link — lead will fill in].
+Card moved to "In Review" pending human merge approval.
+
+### Follow-ups (non-blocking)
+
+- None new. VPC-4 (section builder) and VPC-5 (public render) remain the next slices in the batch, both already unblocked since VPC-1 shipped.
