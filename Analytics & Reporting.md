@@ -157,7 +157,9 @@ Every new endpoint input = a class-validator DTO implementing the shared interfa
    conversion rate, orders/day, revenue/day by currency. Confirm the priority list.
 4. **Vendor revenue definition** — **gross GMV** (assumed) vs **net of commission**?
    Commission structure is unresolved (BRS §9.5). Confirm before card 5 ships numbers
-   vendors will treat as settlement.
+   vendors will treat as settlement. **Resolved 2026-07-27** — see
+   [[Vendor Earnings & Commission]]: 15% commission (admin-configurable), net-of-commission
+   earnings are a separate reporting surface from this note's gross GMV, cards VE-1..VE-5.
 5. **Bespoke analytics vs ADR-001 event backbone** — ADR-001 (Proposed, not built)
    introduces a domain-event outbox + `hb.orders`/`hb.payments` topics and calls out
    an "audit/analytics surface" as a projection (FR-ADM-3). Should bespoke analytics be

@@ -43,7 +43,9 @@ KYC / banking / verification-document review is a **future card** — leave the
 
 ## TBD (still open)
 
-- Commission/fee structure per vendor sale.
+- ~~Commission/fee structure per vendor sale.~~ **Resolved 2026-07-27** — see
+  [[Vendor Earnings & Commission]]: 15% at launch, admin-configurable, effective-dated
+  (past order lines never restated by a later rate change).
 - Whether vendors can fulfil cross-border themselves or must use platform logistics.
 - KYC depth / banking details for vendor payout (deferred past v1).
 

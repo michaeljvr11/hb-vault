@@ -1,0 +1,186 @@
+# Vendor Earnings & Commission
+
+Front-of-funnel spec. Implementation flows through `/ship-card` — no code here.
+Related: [[Money & Currency Rules]] · [[Order State Machine]] · [[Vendor & Admin Portals]] ·
+[[Listing Types & Vendor Rules]] · [[Analytics & Reporting]] · [[HB Domain Model]].
+
+Business-rules source: `H&B Brain` repo (sibling vault, business-plan/strategy — not this
+vault, not `obsidian`-MCP-connected). Cited by file below; treat as settled fact, not TBD,
+unless flagged as an open item there.
+
+## Problem
+
+[[Analytics & Reporting]] shipped vendor/admin revenue reporting as **gross GMV** and
+explicitly deferred commission (its open question 4: *"Vendor revenue definition — gross
+GMV (assumed) vs net of commission? Commission structure is unresolved... confirm before
+[revenue reporting] ships numbers vendors will treat as settlement."*). [[Listing Types
+& Vendor Rules]] and [[Money & Currency Rules]] both separately list the commission/fee
+structure as TBD.
+
+The business side has since settled this (`H&B Brain/08-revenue-model.md`,
+confirmed 2026-07-14, service-fee % marked provisional): **15% commission, vendor keeps
+85%**, and the rate is expected to change once operational costs are modelled — so it
+must be **admin-configurable**, not hardcoded. `H&B Brain/13-payments-payouts.md`
+(updated 2026-07-27) also defines *when* a line becomes payable — delivery plus a 48-hour
+damage-claim window, not merely reaching `confirmed` — and a two-cadence reporting shape
+(weekly-accruing balance vs bi-weekly settlement batch).
+
+This note resolves those open questions and specs the reporting surface: admin sees
+net earnings per vendor over preset windows; vendors see their own. **This is
+visibility/reporting only — no money moves.** Actually executing a payout or integrating
+a payment gateway is out of scope (see below).
+
+## Business rules it must honour
+
+From `H&B Brain` (cite on any implementation deviation):
+
+- **`08-revenue-model.md`**: commission is **15%** of order (line) value at launch,
+  vendor keeps 85%. Marked provisional — "subject to change once operational costs are
+  modelled." This is *why* the rate must be admin-configurable, not a fixed constant.
+- **`13-payments-payouts.md`**:
+  - **Payout-eligibility trigger** = order line **delivered** AND its **48-hour
+    damage-claim window has passed**. This is *not* the `confirmed` order status
+    ([[Order State Machine]] — `confirmed` is the very first post-payment state, four
+    transitions before `delivered`).
+  - Vendor-visible balance **accrues weekly** (eligibility re-checked weekly); actual
+    bank settlement batches **every two weeks**. These are two different numbers and
+    both must be representable in the reporting surface — this note builds the
+    reporting math, not the settlement job itself.
+  - **"Held for vendors" is a distinct accounting line from day one** — customer money
+    is not H&B revenue until the 15% fee is earned. Concretely: platform revenue
+    (admin's real earnings) = sum of commission on eligible lines, *not* gross vendor
+    line GMV like the current `AdminDashboardDto`/`VendorAnalyticsDto` split.
+- **`10-marketplace-rules.md`**: vendor-caused cancellations carry a cancellation fee
+  (amount **still TBD** upstream — do not invent a number). Cancelled/refunded lines
+  never count toward earnings, accruing or settled.
+- **`21-kpis-success-metrics.md`**: "Weekly payouts executed on time %" is a tracked
+  KPI — the accruing/weekly figure this note specs is what that KPI would read from
+  (the KPI itself, and any dashboard widget for it, is out of scope here).
+
+From this vault (existing conventions this feature must not violate):
+
+- **Money stays `numeric(12,2)` + explicit currency; ZAR/NAD never summed**
+  ([[Money & Currency Rules]]). Every earnings figure carries `CurrencyCode`.
+- **Order revenue = line-item snapshot at order time**, not recomputed from live
+  prices ([[Analytics & Reporting]], [[Money & Currency Rules]]) — the commission rate
+  applied to a line must be **snapshotted the same way**, so a later rate change can
+  never retroactively restate a past line's earnings.
+- **Vendor-scoped queries filter by ownership in the service layer**
+  ([[Listing Types & Vendor Rules]], [[Vendor & Admin Portals]]) — a vendor sees only
+  their own `order_items` lines, never another vendor's.
+- **Any service method touching money gets a unit test in the same PR** — non-negotiable
+  repo-wide, doubly so here (this *is* the accounting surface).
+- **State transitions only through `OrdersService.updateStatus`**
+  (`apps/api/src/orders/orders.service.ts:264`) — confirmed in code: `shipped →
+  delivered` is **admin-only** ([[Order State Machine]]). This is the one and only
+  place a `deliveredAt` timestamp can be stamped.
+
+## Data model
+
+Nothing in the current schema captures delivery time or a commission rate. Both are new:
+
+1. **`deliveredAt` timestamp** — needed on the order (or per-shipment, per the "coupled
+   state machines" note in [[Order State Machine]] — v1 assumption: order-level, since
+   partial/mixed-line delivery is still a listed TBD there too). Stamped exactly once,
+   in `OrdersService.updateStatus` on the `shipped → delivered` transition. Claim-window
+   expiry is **derived** (`deliveredAt + 48h`), not stored — one named constant
+   (`DAMAGE_CLAIM_WINDOW_HOURS = 48`), not a magic number scattered across services.
+2. **Commission rate — effective-dated history, not a single mutable value.** An
+   admin-editable *current* rate with no history would mean changing it today silently
+   restates every past line's "earnings" retroactively — directly contradicts the
+   "held for vendors is an accurate accounting line from day one" rule above. So:
+   - An append-only `commission_rates` table (id, `percent`, `effectiveFrom`,
+     `createdBy`, `createdAt`) — admin action *inserts* a new row, never edits/deletes
+     an old one.
+   - **`order_items` snapshots the rate that applied at order-creation time**
+     (`commissionRatePercent numeric(5,2)` or similar), mirroring the existing
+     `unitPrice`/`productName` snapshot pattern on that table. This is the anchor used
+     for both the accruing and settled figures — a rate change never touches an
+     existing line.
+   - Platform (`listingType = 'platform'`) lines carry **no commission** (`NULL`) —
+     there is no vendor to charge a fee to; see [[Listing Types & Vendor Rules]]'s
+     "no fake house vendor" invariant. This is a real behavioural fork from the
+     current `AdminDashboardDto` platform/vendor split, which the admin-earnings card
+     must correct alongside adding commission.
+
+## @hb/shared contract impact
+
+New `contracts/commission.ts` (or extend `contracts/order.ts` — decide at card time) and
+extensions to `contracts/analytics.ts`/`contracts/vendor.ts`. Interfaces + enums only;
+reuse `CurrencyCode`, `CurrencyTotalDto`, `OrderStatus` — do not duplicate.
+
+- **`CommissionRateDto`** — `id`, `percent`, `effectiveFrom`, `createdAt`. Read model
+  for the admin rate-history list.
+- **`SetCommissionRateRequest`** — `percent` (validated range, e.g. 0–100),
+  `effectiveFrom`. Admin-only endpoint input.
+- **`VendorEarningsDto`** (admin, per-vendor) / **`MyEarningsDto`** (vendor, own) —
+  windowed tallies: `accruing: CurrencyTotalDto[]` (delivered, in claim window or past
+  it but not yet in a settlement batch) and `settled: CurrencyTotalDto[]`
+  (bi-weekly-batch-equivalent), each scoped to a requested window
+  (`last_1_week | last_2_weeks | last_month`, or explicit `from`/`to` — reuse the
+  `AdminAnalyticsQuery`/`VendorAnalyticsQuery` `from`/`to` + `granularity` pattern from
+  [[Analytics & Reporting]] rather than inventing a new query shape).
+- Corrected **`AdminDashboardDto`** revenue split (or a new `AdminEarningsDto` —
+  decide at card time so the existing dashboard contract isn't broken mid-migration):
+  `platformCommission` (real H&B revenue — net, commission only) vs
+  `platformListingGmv` (first-party platform-listing GMV, uncommissioned) vs
+  `heldForVendors` (the accounting line the vault explicitly calls out).
+
+Every new endpoint input is a class-validator DTO implementing the shared interface,
+per repo non-negotiables.
+
+## Out of scope (recorded so nobody assumes them)
+
+- **Executing payouts or bank transfers.** `apps/api/src/payments/` is a stub by design
+  ([[Money & Currency Rules]]) — this note specs what a vendor *would be owed*, never
+  moves money.
+- **Payment gateway integration** (Stitch / FNB Namibia eCommerce Switch / DPO —
+  `H&B Brain/13-payments-payouts.md` still lists all three as unconfirmed with no
+  published pricing).
+- **Cancellation fee amount** — `10-marketplace-rules.md` open item, not resolved here.
+  The mechanism (exclude cancelled lines from earnings) is in scope; the fee number
+  itself is not.
+- **Per-vendor negotiated/reduced commission rates** (Phase 1.5 subscription-tier
+  discount mentioned in `08-revenue-model.md`) — v1 ships one global rate. Per-vendor
+  overrides are a future card if/when subscriptions land.
+- **Refund-aware earnings.** No refund flow exists yet in code (`payment-status.ts`'s
+  `refunded` state exists but nothing writes it). Earnings math should exclude
+  cancelled orders; refund-exclusion is a follow-up once a real refund path exists.
+- **Minimum payout amount** — `13-payments-payouts.md` lists this as unresolved.
+- **The "Weekly payouts executed on time %" KPI dashboard widget itself** — this note
+  builds the data the KPI would read, not the KPI tracking UI.
+
+## Open questions (confirm before /ship-card)
+
+1. **Rounding** — [[Money & Currency Rules]] already lists "rounding rules for vendor
+   payouts and fees" as TBD. Proposed default: per-line commission rounded half-up to
+   2dp, `net = gross − commission` (so the two always reconcile to the line total
+   exactly, no drift). Confirm before the computation card ships.
+2. **"Last month" window** — rolling 30 days, or calendar month? Proposed default:
+   rolling, for consistency with `AdminAnalyticsQuery`'s existing 30-day-rolling default.
+3. **Bi-weekly settlement anchor** — `13-payments-payouts.md` doesn't say which date
+   the two-week batches start counting from. Since this note doesn't execute
+   settlement, this only affects how the "settled" figure buckets — flag as unresolved
+   rather than guessing a Monday.
+4. **`deliveredAt` granularity** — order-level (v1 default, matches current
+   order-level status) vs per-shipment/per-line, given [[Order State Machine]] already
+   flags partial/mixed-line delivery as an open TBD independent of this feature.
+5. **Where the new contracts live** — new `contracts/commission.ts` file, or fold into
+   `contracts/order.ts` / `contracts/analytics.ts`? Decide at implementation time
+   against current file sizes, not here.
+
+## Vertical slices → Trello cards
+
+Order: VE-1 → (VE-2 ∥ VE-3) → (VE-4 ∥ VE-5).
+
+1. **VE-1** (#70, `QAeB8YGv`) — Admin-configurable commission rate: `@hb/shared`
+   contracts + effective-dated `commission_rates` entity/migration + admin API.
+2. **VE-2** (#71, `WIZ4pJtk`) — Admin portal commission-rate management screen.
+   Depends on VE-1.
+3. **VE-3** (#72, `trMZD1C5`) — Payout-eligibility data model (`deliveredAt` +
+   derived claim-window) + net earnings computation service. Depends on VE-1
+   (needs the rate snapshot to exist).
+4. **VE-4** (#73, `1DAb9a1I`) — Admin cross-vendor earnings: `GET /admin/earnings`
+   + UI. Depends on VE-3.
+5. **VE-5** (#74, `WrPOgQDa`) — Vendor own-earnings: `GET /vendors/me/earnings` +
+   portal screen. Depends on VE-3.

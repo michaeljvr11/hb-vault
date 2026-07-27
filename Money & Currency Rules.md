@@ -23,7 +23,9 @@ pending → authorized → paid
 ## TBD (ask a human)
 
 - Payment provider choice (Payfast / Paystack / other).
-- Rounding rules for vendor payouts and fees.
+- Rounding rules for vendor payouts and fees — proposed default in
+  [[Vendor Earnings & Commission]] (per-line commission rounded half-up to 2dp,
+  `net = gross − commission`); still needs human confirmation.
 - Refund flow across the border (currency of refund = currency of payment, presumably — confirm).
 
 Related: [[Cross-Border & Customs]] · [[HB Domain Model]]
