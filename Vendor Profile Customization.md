@@ -334,3 +334,61 @@ Card moved to "In Review" pending human merge approval.
 ### Follow-ups (non-blocking)
 
 - None new. VPC-4 (section builder) and VPC-5 (public render) remain the next slices in the batch, both already unblocked since VPC-1 shipped.
+
+
+**VPC-4 shipped** (Trello d7IHQ8Rm, July 2026). Frontend section builder for vendor profile — add/rename/reorder/delete sections; curated product picker and category picker. All tests/lint/build green; PR opened; moved to "In Review".
+
+### What shipped
+
+**"Product sections" panel added to the vendor-profile portal page** (`apps/web/src/app/features/vendor/pages/vendor-profile/vendor-profile.{ts,html,scss}`):
+- Reuses the established vendor-portal-shell visual pattern (no new Claude Design export needed); same page VPC-3 built.
+- **Section CRUD:**
+  - Add: inline form to select type (curated / category) + free-text title; preset-chip UX nudges (non-forcing "Top Picks"/"New Arrivals" chips that auto-fill title for convenience).
+  - Rename: inline edit, 120-char clamp mirroring server `@MaxLength(120)` from VPC-1.
+  - Reorder: up/down buttons (keyboard-operable, no drag-only widget) — one mental model reused at both section-level and product-level.
+  - Delete: remove from array.
+- **Curated sections:** ordered multi-picker strictly scoped to the vendor's own products (`productsService.list({ vendorId, limit: 100 })`), with up/down reorder within the section. Soft 24-products-per-section UX cap (server remains source of truth).
+- **Category sections:** single-select picker over categories derived by deduping the vendor's own fetched products' categories (not the full platform catalog).
+- **Section `id` generation:** client-side via `crypto.randomUUID()` — safe under SSR because it only runs from a click handler, never during server render.
+- **Save distinct action:** `saveSections()` separate from the existing business-details "Save changes"; PATCHes the full `profileSections` array via `VendorsService.update()` and trusts the server response back into state (same convention VPC-3 established). Empty `[]` is a valid, savable state.
+- **Client-side validation gate** (added in review round 1): Save button disables and per-row hints appear when a curated section has 0 products, a category section has no categoryId, or a title is blank — preventing guaranteed server 400s that would reject the *entire* PATCH including valid sibling sections.
+- **Truncation warning:** visible "showing first 100 products" warning when vendor has more products than the fetch returns (`total > items.length`), rather than silently hiding already-picked products outside that page.
+
+### Key decisions
+
+- **Up/down buttons (not drag-and-drop)** — one mental model reused at both section-level and product-level, fully keyboard-operable, no new dependency.
+- **Reorder by product id, not list index** — keyed off product id via `indexOf` into the raw `productIds` array (not the filtered/resolved product list). This distinction prevented a desync bug during review (see below).
+- **Trust server response** — follow VPC-3's convention; no client-side field-merging after save.
+
+### Review outcome
+
+- **Round 1:** FIX-FIRST. Four blocking issues found and fixed:
+  1. **UI allowed structurally invalid sections:** curated with 0 products or category with no categoryId would PATCH and get a server 400, failing the *entire* request including valid sibling sections. **Fixed:** added `sectionsValidForSave` guard disabling Save button + per-row hints for each invalidity cause (0 products, no categoryId, blank title).
+  2. **Reorder button index desync:** reorder operated in the *filtered* resolved-product index space while mutating the *raw* `productIds` array. A section containing one unresolvable/stale product id would desync, silently reordering the wrong entry. **Fixed:** keyed reorder off product id via `indexOf` into the raw array instead of list position.
+  3. **Silent truncation in product picker:** 100-product fetch page truncates for high-catalog vendors; already-picked ids outside that page vanished from view while still riding in the save payload. **Fixed:** visible "showing first 100 products" warning when `total > items.length`.
+  4. **No trim/length guard on inline rename:** server allows blank, caps at 120 chars; HTML `maxlength` attribute was the only gate. **Fixed:** added `.slice(0,120)` trim in `renameSection()` method (folded blank titles into the same validity guard as issue 1).
+- **Round 2:** SHIP. All four findings verified genuinely closed (re-derived each original failure scenario against the fix, not just re-read the diff).
+
+### Test coverage
+
+- ~30+ new/updated Vitest cases in `vendor-profile.spec.ts`: add/rename/reorder/delete round-trips (including that reorder and rename land in the *saved payload*, not just local state), curated picker strictly scoped to vendor's own products, category options strictly scoped to categories the vendor has products in, preset-chip prefill (non-forcing), curated/category save payload shape (incl. discriminated union correctness), empty-sections save, trust-server-response convention, save-blocked-until-valid for all three invalidity causes, reorder-by-id correctness under a simulated stale/unresolvable-id desync scenario, 10-section and 24-product soft caps disabling their respective add controls, 120-char rename clamp.
+- Full suite: **671 tests / 55 files green** (`npm run test -w @hb/web`). `npm run build` clean (one pre-existing SCSS budget warning on `admin-catalog`, not touched). `npm run lint:api` clean (no backend touched).
+
+### Out of scope (by design)
+
+- No `rule`-based sections (`newest` / `best_selling`) — that is VPC-6, explicitly deferred.
+- No rendering of sections on the public profile page — that is VPC-5, the next slice.
+- Full pagination/search in the product picker beyond the visible truncation warning (accepted follow-up).
+
+### PR + card status
+
+PR link: [PR link — lead filled in after doc pass].
+Card moved to "In Review" pending human merge approval.
+
+### Follow-ups (non-blocking)
+
+- `addSection()` should mirror `renameSection()`'s defensive `.slice(0,120)` title clamp in TS (currently relies only on the HTML `maxlength` attribute).
+- Interpolate the "first 100 products" warning copy against the `PRODUCT_LIST_MAX` constant instead of a hardcoded literal.
+- The caps `10` (sections) and `24` (products/section) now live in three places (`vendor-profile.ts`, `update-vendor.dto.ts`, `vendor-profile-section.dto.ts`) — candidate for promoting to `@hb/shared` constants to remove drift risk (flagged by review as advisory, not blocking).
+- Product picker full pagination/search for vendors with >100 products (accepted follow-up, not blocking for v1).
+- VPC-5 (public render of sections) is now the natural next slice.
