@@ -102,6 +102,23 @@ Nothing in the current schema captures delivery time or a commission rate. Both 
      "no fake house vendor" invariant. This is a real behavioural fork from the
      current `AdminDashboardDto` platform/vendor split, which the admin-earnings card
      must correct alongside adding commission.
+3. **Rounding (confirmed 2026-07-28).** Per line: `commission = round_half_up(gross ×
+   rate, 2dp)`; `net = gross − commission` (derived, never independently rounded).
+   Rounding only one side and deriving the other guarantees `commission + net === gross`
+   on every line — independently rounding both can drift by a cent (e.g. gross=R10.00,
+   rate=15.55% → independently-rounded commission 1.56 + net 8.45 = R10.01, a cent over;
+   deriving net instead gives 1.56 + 8.44 = R10.00 exactly). Rounding the commission side
+   specifically means H&B computes and rounds its own cut and any sub-cent residue lands
+   on the vendor's net, not on platform revenue — a deliberate, disclosed choice, not a
+   neutral one.
+4. **Bi-weekly settlement anchor (confirmed 2026-07-28) — placeholder, not a real ops
+   decision.** `13-payments-payouts.md` never states which calendar date the two-week
+   settlement periods count from. Since this note only builds reporting (no settlement
+   job exists to actually anchor), implement one single named constant
+   (`SETTLEMENT_ANCHOR_DATE` or equivalent) that all bi-weekly bucketing math reads from
+   — not inlined/duplicated anywhere. Treat its value as provisional and trivially
+   swappable; the real anchor is still a human ops decision for whoever eventually builds
+   the settlement-execution job.
 
 ## @hb/shared contract impact
 
@@ -117,9 +134,14 @@ reuse `CurrencyCode`, `CurrencyTotalDto`, `OrderStatus` — do not duplicate.
   windowed tallies: `accruing: CurrencyTotalDto[]` (delivered, in claim window or past
   it but not yet in a settlement batch) and `settled: CurrencyTotalDto[]`
   (bi-weekly-batch-equivalent), each scoped to a requested window
-  (`last_1_week | last_2_weeks | last_month`, or explicit `from`/`to` — reuse the
-  `AdminAnalyticsQuery`/`VendorAnalyticsQuery` `from`/`to` + `granularity` pattern from
-  [[Analytics & Reporting]] rather than inventing a new query shape).
+  `EarningsWindow = '1w' | '2w' | '1m'` (mixed semantics, confirmed 2026-07-28 —
+  **`1w`/`2w` are rolling trailing periods ending now**, matching
+  `AdminAnalyticsQuery`'s existing rolling-window convention, but **`1m` is the current
+  calendar month** — 1st of the month through now, or the full month when a past month
+  is targeted explicitly via `from`/`to`. Not a rolling 30 days. Explicit `from`/`to`
+  always wins over the `window` preset when both are supplied), reusing the
+  `AdminAnalyticsQuery`/`VendorAnalyticsQuery` `from`/`to` pattern from
+  [[Analytics & Reporting]] rather than inventing a new query shape.
 - Corrected **`AdminDashboardDto`** revenue split (or a new `AdminEarningsDto` —
   decide at card time so the existing dashboard contract isn't broken mid-migration):
   `platformCommission` (real H&B revenue — net, commission only) vs
@@ -143,31 +165,41 @@ per repo non-negotiables.
 - **Per-vendor negotiated/reduced commission rates** (Phase 1.5 subscription-tier
   discount mentioned in `08-revenue-model.md`) — v1 ships one global rate. Per-vendor
   overrides are a future card if/when subscriptions land.
-- **Refund-aware earnings.** No refund flow exists yet in code (`payment-status.ts`'s
-  `refunded` state exists but nothing writes it). Earnings math should exclude
-  cancelled orders; refund-exclusion is a follow-up once a real refund path exists.
+- **A real refund flow.** No refund flow exists yet in code (`payment-status.ts`'s
+  `refunded` state exists but nothing currently writes it) — building one is out of
+  scope. The earnings computation **does** include the exclusion hook now (confirmed
+  2026-07-28): a line is ineligible if its order is `cancelled`, or has any `payments`
+  row with `status = refunded`. Currently inert (no writer exists yet) but wired so
+  earnings are correct the moment a refund path lands, with no follow-up card needed.
 - **Minimum payout amount** — `13-payments-payouts.md` lists this as unresolved.
 - **The "Weekly payouts executed on time %" KPI dashboard widget itself** — this note
   builds the data the KPI would read, not the KPI tracking UI.
 
-## Open questions (confirm before /ship-card)
+## Open questions
 
-1. **Rounding** — [[Money & Currency Rules]] already lists "rounding rules for vendor
-   payouts and fees" as TBD. Proposed default: per-line commission rounded half-up to
-   2dp, `net = gross − commission` (so the two always reconcile to the line total
-   exactly, no drift). Confirm before the computation card ships.
-2. **"Last month" window** — rolling 30 days, or calendar month? Proposed default:
-   rolling, for consistency with `AdminAnalyticsQuery`'s existing 30-day-rolling default.
-3. **Bi-weekly settlement anchor** — `13-payments-payouts.md` doesn't say which date
-   the two-week batches start counting from. Since this note doesn't execute
-   settlement, this only affects how the "settled" figure buckets — flag as unresolved
-   rather than guessing a Monday.
-4. **`deliveredAt` granularity** — order-level (v1 default, matches current
-   order-level status) vs per-shipment/per-line, given [[Order State Machine]] already
-   flags partial/mixed-line delivery as an open TBD independent of this feature.
-5. **Where the new contracts live** — new `contracts/commission.ts` file, or fold into
-   `contracts/order.ts` / `contracts/analytics.ts`? Decide at implementation time
-   against current file sizes, not here.
+All resolved 2026-07-28 except one:
+
+1. ~~**Rounding**~~ — **resolved**: per-line commission rounded half-up to 2dp, net
+   derived by subtraction. See "Data model" point 3 above for the mechanics and why.
+   [[Money & Currency Rules]]'s "rounding rules for vendor payouts and fees" TBD is
+   answered for this feature specifically (still open more broadly for actual payout
+   execution, which remains out of scope here).
+2. ~~**"Last month" window**~~ — **resolved**: calendar month, not rolling 30 days.
+   `1w`/`2w` stay rolling trailing windows. See "`@hb/shared` contract impact" above.
+3. ~~**Bi-weekly settlement anchor**~~ — **resolved**: ship a placeholder anchor
+   (single named constant, easily changed) rather than blocking on the real ops
+   decision. See "Data model" point 4 above.
+4. ~~**Refunds**~~ — **resolved**: the exclusion hook (any `payments` row with
+   `status = refunded`) is built now, even though currently inert. See "Out of scope"
+   above.
+5. **Still open — `deliveredAt` granularity.** Order-level (v1 default, matches
+   current order-level status) vs per-shipment/per-line, given [[Order State Machine]]
+   already flags partial/mixed-line delivery as an open TBD independent of this
+   feature. VE-3 ships the order-level default; revisit only if/when partial delivery
+   is itself specced.
+
+Contract file location (new `contracts/earnings.ts`) was settled during card-writing —
+see VE-1/VE-3/VE-4/VE-5 below.
 
 ## Vertical slices → Trello cards
 
