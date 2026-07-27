@@ -24,7 +24,15 @@ Cross-border e-commerce & logistics platform: products sourced/listed in **South
 
 ## Open business decisions (TBD — ask a human)
 
-- Pricing rules: markup model, who sets vendor prices, promotional pricing.
-- Cross-border delivery fee structure.
+- ~~Pricing rules: markup model, who sets vendor prices, promotional pricing.~~
+  **Resolved** (`H&B Brain/09-pricing-strategy.md`, confirmed 2026-07-14): vendors set
+  their own prices, no platform markup — the 15% service fee ([[Vendor Earnings &
+  Commission]]) is deducted from the vendor's price, not added on top. No vendor-run
+  promotions/discounts at Phase 1 launch (planned as a fast follow). No price-parity
+  rule enforced at launch either (monitored only).
+- Cross-border delivery fee structure — the *model* is settled (pure pass-through at
+  cost, no margin; priority-delivery flat fee TBD — `H&B Brain/08-revenue-model.md`),
+  but the actual fee amounts remain open, matching this vault's `shippingTotal = 0.00`
+  placeholder ([[Order State Machine]] implementation notes).
 - Returns/refunds policy across the border.
 - KYC requirements for vendor onboarding.

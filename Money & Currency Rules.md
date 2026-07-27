@@ -22,7 +22,12 @@ pending → authorized → paid
 
 ## TBD (ask a human)
 
-- Payment provider choice (Payfast / Paystack / other).
+- Payment provider choice — stale candidate list corrected 2026-07-28: current shortlist
+  per `H&B Brain/13-payments-payouts.md` (updated 2026-07-27) is **Stitch** (front-runner
+  but Namibia support now looks unlikely — no public evidence it operates there),
+  **FNB Namibia eCommerce Switch**, and **DPO Group** (licensed Namibian facilitator);
+  none has confirmed Namibian pricing yet. Payfast/Paystack are not on the current
+  shortlist.
 - Rounding rules for vendor payouts and fees — proposed default in
   [[Vendor Earnings & Commission]] (per-line commission rounded half-up to 2dp,
   `net = gross − commission`); still needs human confirmation.
