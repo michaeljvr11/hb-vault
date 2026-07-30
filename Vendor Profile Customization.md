@@ -392,3 +392,55 @@ Card moved to "In Review" pending human merge approval.
 - The caps `10` (sections) and `24` (products/section) now live in three places (`vendor-profile.ts`, `update-vendor.dto.ts`, `vendor-profile-section.dto.ts`) — candidate for promoting to `@hb/shared` constants to remove drift risk (flagged by review as advisory, not blocking).
 - Product picker full pagination/search for vendors with >100 products (accepted follow-up, not blocking for v1).
 - VPC-5 (public render of sections) is now the natural next slice.
+
+
+**VPC-5 shipped** (Trello rHxbUA2G, July 2026). Frontend-only slice rendering vendor branding and profile sections on the public profile page. All tests/lint/build green; PR not yet opened (lead opens after doc pass); card moves to "In Review" after PR opens.
+
+### What shipped
+
+**Frontend-only slice** (no `@hb/shared`/backend changes; the contract shipped in VPC-1). Changed files: `apps/web/src/app/features/vendors/vendor-profile/vendor-profile.ts`, `.html`, `.scss`, `.spec.ts`.
+
+- **Two new computed signals** on `PublicVendorProfile` component:
+  - `resolvedSections` — resolves `vendor.profileSections` in array order against the already-loaded `products()` signal (no extra HTTP requests). Curated sections map `productIds` in given order to fetched products, dropping dangling ids; category sections filter fetched products by `categories[].id === categoryId`; a section resolving to zero products is dropped entirely rather than rendering an empty shell; returns `[]` while `productsState() === 'loading'` to avoid a flash.
+  - `hasCustomSections` — true iff at least one section resolved non-empty.
+- **Hero enhancements:** `bannerUrl` renders a wide hero image above the hero card (`loading="eager" fetchpriority="high"` — above-the-fold LCP element); `logoUrl` renders a circular logo next to the business name; `slogan` renders under the trading name. All optional/guarded, plain SSR-safe `<img>` tags, no browser-only APIs.
+- **Conditional layout:** when `hasCustomSections()` is true, the page renders each resolved section (heading + product grid) instead of the old auto-derived category-chips + flat-grid. When false (vendor set nothing, or every section resolved empty), the original auto-derived layout renders unchanged — verified byte-identical fallback, no regression.
+- **Residual grid:** a **"More from `<vendor businessName>`"** grid renders every fetched product not claimed by any resolved section, positioned after the vendor's own sections. A product referenced by more than one section renders in every section that claims it and is excluded from the residual grid as long as at least one section claims it. (Prevents silent content loss if a vendor builds even one small curated section.)
+- No new Claude Design export pulled for this — built to the existing `docs/design/DESIGN.md` token language and the existing page's visual rhythm.
+
+### Key decisions
+
+**Residual-grid approach** (made mid-review, confirmed with the card owner): Without a residual grid showing unclaimed products, a vendor building even one small curated section would make every other product on their page invisible — a silent content-loss regression. The alternative considered was "sections-only, full curation control" (unsectioned products stay findable via search, just not on the vendor's own page) — the residual-grid option was chosen instead to maximize discoverability for vendors transitioning to sections.
+
+### Known limitation (inherited, not a regression)
+
+Curated/category resolution only operates against the vendor's already-fetched product list, capped at 100 products (`PRODUCT_LIST_MAX`, pre-existing since PR #35, untouched by this card). A vendor with >100 products who curates a product past that fetch boundary would see it silently absent. This limitation is documented separately (see VPC-4 follow-ups: "Product picker full pagination/search for vendors with >100 products"). Not a new regression — the residual grid means the worst case is now no worse than before this card (content loss is bounded by the fetch, not by section resolution).
+
+### Review outcome
+
+- **Round 1:** FIX-FIRST. Two blocking findings:
+  1. **Silent-content-loss issue:** the 100-product-cap concern was investigated and confirmed as a pre-existing, already-documented limitation (not a regression introduced by this card), left as an accepted follow-up rather than fixed in this card.
+  2. **Type safety & accessibility:** explicit `VendorSectionType.CATEGORY` type check (was an implicit `else`, now future-proofed against a later third section type per the enum's own "left open" contract comment); `aria-labelledby` added pointing at each section's own heading `id` (replaced a redundant `aria-label` duplicating the visible `<h2>`); `loading="eager" fetchpriority="high"` added to the banner image (was `loading="lazy"`, wrong for an above-the-fold LCP element).
+- **Round 2:** SHIP. Both round-1 blockers verified genuinely closed (re-derived the original failure scenarios against the fix, including the multi-section-overlap case).
+
+### Test coverage
+
+`vendor-profile.spec.ts` — new `describe('vendor branding + profile sections', ...)` block: hero banner/logo/slogan present/absent; curated-section resolution preserves `productIds` order (not fetch order); dangling ids silently dropped; category-section filtering by `categoryId`; all-sections-empty falls back to the original chips+grid layout; fallback also applies when `profileSections` is `undefined` or `[]`; multiple sections render in given array order; no section markup renders while products are still loading; residual grid renders unclaimed products with the correct heading; residual grid is omitted when every product is claimed; a product referenced by two sections renders in both and is excluded from the residual grid.
+
+Full web suite: **684 tests / 55 files green** (`npm run test -w @hb/web`). `npm run build` clean (two pre-existing unrelated SCSS budget warnings: `admin-catalog` and the vendor-portal's `vendor-profile.scss` — a different file from this diff). `npm run lint:api` clean (no backend touched).
+
+### Out of scope (by design)
+
+- No `rule`-based sections (VPC-6, explicitly deferred).
+- No fix to the pre-existing 100-product fetch cap (documented limitation, accepted follow-up).
+- No portal changes (VPC-3/4 already shipped the editor).
+
+### PR + card status
+
+PR not yet opened at time of documentation (lead opens it right after this doc pass). Card moves to "In Review" after PR opens.
+
+### Follow-ups (non-blocking)
+
+- Section-id character-set validation (`@Matches` on the DTO) to harden the `aria-labelledby` wiring — section id (vendor-controlled free text, `@MaxLength(64)`, no character-set restriction) is interpolated directly into a DOM `id`/`aria-labelledby`. A section id containing a space or other special characters could theoretically degrade accessibility wiring (low severity, not reachable through the portal's own UI which generates ids via `crypto.randomUUID()`).
+- Logo could switch off `loading="lazy"` since it's above the fold; currently lazy-loaded, not the LCP element so minor.
+- The 100-product fetch cap should eventually get real pagination (tracked informally, not a card yet) — this note now documents that limitation centrally for a future prioritization pass, since previously it was only mentioned in VPC-4's follow-ups as a portal-picker-specific issue.
