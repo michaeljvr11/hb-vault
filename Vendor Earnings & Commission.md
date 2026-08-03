@@ -284,6 +284,51 @@ see VE-1/VE-3/VE-4/VE-5 below.
 - Out of scope: backend order-item rate snapshots, payout eligibility (VE-3/VE-4/VE-5).
 - Out of scope: vendor-facing earnings portals (VE-5).
 
+## Implementation Notes (VE-3)
+
+**Date:** 2026-08-03  
+**Card:** VE-3 (#72, `trMZD1C5`)  
+**Branch:** `feat/trMZD1C5-payout-eligibility-earnings` (PR open, not yet merged)
+
+### What shipped
+
+- **Migration `1784505600000-OrderDeliveredAt`**: Adds `orders.deliveredAt timestamptz NULL`, indexed. Backfills existing `delivered` status rows from `updatedAt`. Symmetric down-migration.
+- **Migration `1784592000000-OrderItemCommissionRatePercent`**: Adds `order_items.commissionRatePercent numeric(5,2) NULL`. Backfill resolves each order's actual effective-dated commission rate via a correlated subquery (mirrors `CommissionRateService.getRateAt` — latest `commission_rates` row with `effectiveFrom <= order.createdAt`), not a flat hardcoded rate. Platform lines (`vendorId IS NULL`) backfill to NULL.
+- **`OrdersService.updateStatus` stamping logic**: Stamps `deliveredAt` exactly once, only on `shipped → delivered`, via an atomic conditional `UPDATE ... WHERE deliveredAt IS NULL` (not a whole-entity `save()`). Prevents race-condition double-stamp from two concurrent admin transitions.
+- **`OrdersService.create` commission snapshot**: Snapshots `commissionRatePercent` per vendor line from `CommissionRateService.getRateAt()`, resolved once per order (single consistent timestamp/call across all lines, not re-resolved per line). Platform lines receive `null`. Added `CommissionModule` to `OrdersModule`'s imports (per VE-1's decision that `CommissionModule` is not `@Global()`).
+- **`apps/api/src/earnings/` module** (new, backend-only engine): Mirrors `commission/`'s standalone shape — no HTTP surface (no controller, no `@hb/shared` DTOs; VE-4/VE-5 build their own contracts on top). Files: `earnings.constants.ts` (defines `DAMAGE_CLAIM_WINDOW_HOURS = 48`, `SETTLEMENT_ANCHOR_DATE` placeholder), `vendor-earnings.service.ts` (provides `VendorEarningsService.getEarnings(scope, from, to, now?)` returning `{ pendingClaimWindow, accrued, settlementPreview }`).
+- **12 new/extended unit tests**: Across `orders.service.spec.ts` and new `vendor-earnings.service.spec.ts`, covering: claim-window boundary (inclusive at exactly 48h), cancellation/refund exclusion, rounding-drift-proof commission math, ZAR/NAD separation, vendor scoping, and settlement-anchor period bucketing.
+
+### Key decisions for downstream cards (VE-4/VE-5)
+
+1. **`VendorEarningsService.getEarnings(scope: { vendorId?: string }, from: Date, to: Date, now = new Date())`** — method signature chosen without `@hb/shared` contracts (this card adds no DTOs) because VE-4 (admin cross-vendor) and VE-5 (vendor own-earnings) build their own endpoint DTOs/controllers on top. `scope.vendorId` undefined = platform-wide (VE-4's use case, likely called once per vendor in a loop, or extend method to group-by-vendor internally if VE-4 needs single-query efficiency); concrete `vendorId` = scoped to one vendor (VE-5's use case) with ownership enforced in the service layer.
+
+2. **Settlement periods bucket on the eligibility instant (`deliveredAt + 48h`), not on `deliveredAt` itself.** Code review caught an off-by-one: a line delivered in the last 48h of a bi-weekly period doesn't actually become payout-eligible until the next period, so bucketing on `deliveredAt` would misplace it in a period a settlement batch could never have paid it in. `periodIndexFor` is keyed off the claim-window-end date.
+
+3. **Rounding must be done in integer "hundredths-of-a-percent" units, not `Math.round(gross * ratePercent / 100)`.** Code review caught the exact float-precision bug VE-2's UI layer already encountered: `ratePercent` as a raw float (e.g., 8.29) causes `Math.round` to misround at exact-half-cent boundaries (gross R50.00 @ 8.29% evaluates to 414.499999999... instead of 414.5, rounding down to 414 instead of the correct half-up 415). Fixed by converting rate to integer (hundredths-of-a-percent) before any division.
+
+4. **A vendor line with null `commissionRatePercent` is excluded from every earnings bucket (with a warning logged), never silently treated as 0% commission.** Should be unreachable post-migration, but was an untested branch code review flagged as a silent-revenue-loss risk if a backfill gap or bad row ever occurs.
+
+5. **The migration-2 backfill must resolve the actual historical rate per order, never hardcode the seed rate.** Code review caught this too: since VE-1 ships an effective-dated rate history and VE-2 ships the admin UI to add new rates, a flat "everyone gets 15.00%" backfill would silently misstate any vendor line whose order predates a later rate change.
+
+### Review & test outcome
+
+- `npm run test:api`: 535/535 pass (39 suites).
+- `npm run lint:api`: clean.
+- `npm run build`: clean (shared → api → web).
+- Migrations verified up → down → up against the existing non-empty dev DB (twice: once before and once after the backfill-query fix).
+- **Code-reviewer pass found 4 blocking issues, all fixed before PR:**
+  1. **Rounding float-precision bug** — `Math.round(gross * ratePercent / 100)` misrounds at exact-half-cent boundaries for rates like 8.29%. Fixed: convert rate to integer (hundredths-of-a-percent) before division.
+  2. **Hardcoded-rate backfill** — migration-2 initially used "everyone gets 15.00%". Fixed: backfill now resolves actual historical rate per order via correlated subquery.
+  3. **Eligibility-instant bucketing off-by-one** — `periodIndexFor` was keyed on `deliveredAt`, placing claim-window-end lines in wrong period. Fixed: key off `deliveredAt + 48h` instead.
+  4. **Untested null-rate branch** — code path that silently treats `commissionRatePercent IS NULL` as 0% was unreached. Fixed: now excluded with a warning log, flagged as the silent-revenue-loss risk it is.
+  5. **`deliveredAt` stamp race (non-blocking, fixed proactively)** — two concurrent `shipped → delivered` calls could double-stamp via whole-entity save. Fixed via atomic conditional DB update (`WHERE deliveredAt IS NULL`).
+
+### Scope explicit
+
+- Out of scope (per card): any endpoint, any UI, any `@hb/shared` contract. VE-4/VE-5 build those next.
+- Out of scope: executing payouts, settlement job, cancellation-fee amount (all separately tracked TBDs already listed above in this note).
+
 ## Vertical slices → Trello cards
 
 Order: VE-1 → (VE-2 ∥ VE-3) → (VE-4 ∥ VE-5).
