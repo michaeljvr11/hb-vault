@@ -239,6 +239,51 @@ see VE-1/VE-3/VE-4/VE-5 below.
 - Out of scope: `orders`, `order_items`, payout eligibility, claim windows, settlement (VE-3/VE-4/VE-5).
 - Out of scope: UI (VE-2).
 
+## Implementation Notes (VE-2)
+
+**Date:** 2026-08-03  
+**Card:** VE-2 (#71, `WIZ4pJtk`)  
+**Branch:** `feat/WIZ4pJtk-admin-commission-rate-screen` (PR #44 open, not yet merged)
+
+### What shipped
+
+- **`apps/web/src/app/core/api/commission.service.ts`** (new): `CommissionService` wrapping `GET /admin/commission-rates` and `POST /admin/commission-rates` endpoints from VE-1, with typed response mapping.
+- **`apps/web/src/app/features/admin/pages/admin-commission/` component** (new, standalone Angular): reads and displays the current in-force commission rate as a headline; renders full effective-dated history as a sortable table; includes a "schedule new rate" form with client-side validation.
+- **Admin route & nav**: new `/admin/commission-rates` route and "Commission" sidebar nav entry in `apps/web/src/app/app.routes.ts` and `apps/web/src/app/features/admin/admin-shell/admin-shell.ts`.
+- **Form validation (client-side)**:
+  - `ratePercent`: range 0–100, **at most 2 decimal places** (regex `/^\d+(\.\d{1,2})?$/` to avoid float-precision bugs — see Key decisions below).
+  - `effectiveFrom`: optional `datetime-local` input; when blank, omitted from POST payload so server-side `now()` default applies; when unparsable, caught client-side (`Number.isNaN(parsed.getTime())`) before submission.
+  - `note`: optional, max 500 chars (mirrors server's `@MaxLength(500)` constraint for fast-fail UX).
+- **Error handling**: server-side 409 Conflict (out-of-order `effectiveFrom`) surfaced verbatim as an inline form error, not a raw stack trace or toast.
+- **Double-submit guard**: form disabled during pending submission.
+- **Vitest specs** (56 tests, 697 total across web): load tests (initial rate fetch, table render), submit success with auto-refresh, 409-conflict handling, double-submit guard, client-side validation (edge cases: 8.29%, 0.5%, invalid dates).
+
+### Key decisions worth recording
+
+1. **Float-precision validation gotcha (caught in code review).** Initial validation used `Math.round(rate*100) !== rate*100` to check 2dp. This fails for legitimate rates like 8.29% because `8.29*100 === 828.9999999999999` in IEEE 754 arithmetic, falsely flagging it as invalid. Fixed by checking the decimal-string representation directly with regex `/^\d+(\.\d{1,2})?$/`. **General lesson**: never validate fractional precision via float arithmetic; work on the string representation or use a decimal library if available in the stack.
+
+2. **`effectiveFrom` omission from POST when blank.** Client-side leaves `effectiveFrom` out of the request body entirely (not a `null` field) when the form field is empty, so the server's `now()` default takes effect. Keeps the form optional without requiring client-side time logic.
+
+3. **`effectiveFrom` parse error handling (caught in code review).** `datetime-local` input's `value` is parsed via `new Date(dateString)`, which silently returns `Invalid Date` for unparsable strings. Check `Number.isNaN(parsed.getTime())` before calling `submit()` to fail fast with a clear client-side message instead of letting the backend reject with a raw 400.
+
+4. **Note length client-side mirror.** Server enforces `@MaxLength(500)` on `note`; adding the same check client-side (`note.length <= 500`) provides immediate feedback in the form UX without a round-trip, improving perceived responsiveness.
+
+### Review & test outcome
+
+- `npm run test -w @hb/web`: 697/697 tests passed (56 files).
+- `npm run test:api`, `npm run lint:api`, `npm run build` (root): all clean.
+- Code-reviewer flagged 4 blocking issues (all fixed before merge):
+  1. **Float-precision validation bug** — initial `Math.round` check was imprecise. Fixed by switching to regex on the input string.
+  2. **Untested decimal-precision branch** — test suite did not cover the 8.29% edge case. Added dedicated test.
+  3. **Unguarded `effectiveFrom` parse** — `new Date()` can return `Invalid Date`; no check before `submit()`. Added `Number.isNaN()` guard.
+  4. **Missing client-side note length check** — server enforces 500 chars; client had no mirror. Added.
+- Reviewer also applied a small advisory simplification: merged two near-identical error-message signals into a single `submitError` property to reduce template boilerplate.
+
+### Scope explicit
+
+- Out of scope: backend order-item rate snapshots, payout eligibility (VE-3/VE-4/VE-5).
+- Out of scope: vendor-facing earnings portals (VE-5).
+
 ## Vertical slices → Trello cards
 
 Order: VE-1 → (VE-2 ∥ VE-3) → (VE-4 ∥ VE-5).
