@@ -201,6 +201,44 @@ All resolved 2026-07-28 except one:
 Contract file location (new `contracts/earnings.ts`) was settled during card-writing —
 see VE-1/VE-3/VE-4/VE-5 below.
 
+## Implementation Notes (VE-1)
+
+**Date:** 2026-08-03  
+**Card:** VE-1 (#70, `QAeB8YGv`)  
+**Branch:** `feat/QAeB8YGv-admin-commission-rate` (PR open, not yet merged)
+
+### What shipped
+
+- **`libs/shared/src/contracts/earnings.ts`** (new): `CommissionRateDto`, `CreateCommissionRateRequest`, `CommissionRateListItemDto` (adds `inForce: boolean` flag for the active rate), `CommissionRateListDto`. Exported from `contracts/index.ts`.
+- **`apps/api/src/commission/` module** (new): `CommissionRateEntity`, `CommissionRateService` (methods: `create`, `list`, `getRateAt(date)`), `CommissionController` with `GET /admin/commission-rates` and `POST /admin/commission-rates` (both `@Roles(ADMIN)`). No PATCH/DELETE routes — append-only by omission.
+- **Migration** `1784419200000-CommissionRates.ts`: creates `commission_rates` table (id, `ratePercent numeric(5,2)`, `effectiveFrom timestamptz`, `note varchar(500)`, `createdByUserId`, `createdAt`). Adds a **unique index on `effectiveFrom`** to prevent concurrent-insert race. Seeds the 15.00% row from the earliest existing order's `createdAt` (or epoch if no orders exist).
+- **Audit trail**: new `commission_rate.created` action logged via existing `AuditService`.
+- **14 unit tests**: cover strictly-after boundary (409 Conflict on out-of-order or duplicate `effectiveFrom`), numeric-string→number coercion, `inForce` flagging, and `getRateAt` boundary resolution (`LessThanOrEqual` operator verified, not just mocked return).
+
+### Key decisions for downstream cards
+
+1. **Unique index on `effectiveFrom` for race prevention.** Initially the service had only app-layer read-then-write logic; code review flagged a race: two concurrent POSTs could both read the same "latest" row and insert conflicting rows. Fixed by adding a `UNIQUE` constraint on `effectiveFrom` in the migration and catching the resulting pg `23505` violation, rethrowing it as the same `ConflictException` an out-of-order sequential request gets. **This ensures the database, not the app, is the race-prevention gate.**
+
+2. **`CommissionModule` is NOT `@Global()`**, unlike `AuditModule`. Initially built `@Global()` to mirror audit's pattern, but code review noted that `CommissionModule` owns an HTTP controller (audit does not) and currently has no cross-module consumer. Globalizing it would needlessly export HTTP surface into every module's injector. **VE-3 should explicitly `imports: [CommissionModule]` when it needs `CommissionRateService.getRateAt()` for order-item rate snapshots.** This keeps the module boundary clear.
+
+3. **`getRateAt(date)` behavior**: boundary-inclusive (`effectiveFrom <= date`), throws (does not silently fall back) if no row covers the date. Should never happen post-seed, but VE-3 must not treat a thrown error here as "no commission" — it should propagate or be explicitly handled.
+
+### Review & test outcome
+
+- `npm run test:api`: 512/512 pass.
+- `npm run lint:api`: clean.
+- `npm run build`: clean (shared → api → web).
+- Code-reviewer pass found 4 blocking issues, all fixed before PR:
+  - Weak `getRateAt` test assertions (now verify the actual `LessThanOrEqual` query).
+  - Missing unique constraint (added to migration).
+  - Unbounded `note` length (limited to 500 chars via migration).
+  - `CommissionController` not registered in public-route auth guardrail test (added).
+
+### Scope explicit
+
+- Out of scope: `orders`, `order_items`, payout eligibility, claim windows, settlement (VE-3/VE-4/VE-5).
+- Out of scope: UI (VE-2).
+
 ## Vertical slices → Trello cards
 
 Order: VE-1 → (VE-2 ∥ VE-3) → (VE-4 ∥ VE-5).
