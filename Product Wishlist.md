@@ -127,19 +127,18 @@ No changes to `CartDto`, `ProductDto`, or `AnalyticsEventType`.
 
 ## Open questions (confirm before /ship-card)
 
-1. **Standalone `/wishlist` route, or a fourth [[Customer Profile]] `ProfileShell` tab?**
-   Recommendation: **standalone**. The radial-nav stub already treats `wishlist` as a sibling
-   of `profile`, and a wishlist is a shopping surface, not account admin. WL-4 is written for
-   the standalone option — if the answer flips, its route ACs need rewriting before it starts.
-2. **Duplicate prevention.** Recommendation: **yes** — a DB-level `UNIQUE (userId, productId)`,
-   with `POST` idempotent rather than 409. Confirm the idempotent-vs-409 half specifically, as
-   it changes the client's error handling on a rapid double-tap.
-3. **Unavailable wishlisted products.** Recommendation for v1: out-of-stock items **stay** in
-   the list with an "Out of stock" badge and a disabled add-to-cart (`stockQuantity` is already
-   resolved live, so this costs nothing); deleted products disappear silently via the FK
-   cascade; **no** tombstone row. Confirm, or raise a `Product` soft-delete card first.
-4. **Wishlist badge in the desktop nav — icon-only, or icon + count?** Recommendation: icon +
-   count, matching `nav-bar__cart-badge`, so the two icons read consistently.
+1. ✓ **Standalone `/wishlist` route, or a fourth [[Customer Profile]] `ProfileShell` tab?**
+   **Resolved 2026-08-06, confirmed with owner: standalone.** WL-4 is written for this;
+   no rewrite needed.
+2. ✓ **Duplicate prevention.** **Resolved 2026-08-06, confirmed with owner: idempotent
+   `POST`** (200, unchanged list on re-add) — not a 409. DB-level `UNIQUE (userId, productId)`
+   stands as the enforcement mechanism.
+3. ✓ **Unavailable wishlisted products.** **Resolved 2026-08-06, confirmed with owner:**
+   out-of-stock items stay in the list with an "Out of stock" badge and a disabled
+   add-to-cart. Deleted products disappear silently via the FK cascade; no tombstone row.
+4. **Wishlist badge in the desktop nav — icon-only, or icon + count?** Still open.
+   Recommendation: icon + count, matching `nav-bar__cart-badge`, so the two icons read
+   consistently. Confirm before WL-5 starts.
 
 ## Vertical slices → Trello cards
 
