@@ -136,9 +136,13 @@ No changes to `CartDto`, `ProductDto`, or `AnalyticsEventType`.
 3. ✓ **Unavailable wishlisted products.** **Resolved 2026-08-06, confirmed with owner:**
    out-of-stock items stay in the list with an "Out of stock" badge and a disabled
    add-to-cart. Deleted products disappear silently via the FK cascade; no tombstone row.
-4. **Wishlist badge in the desktop nav — icon-only, or icon + count?** Still open.
-   Recommendation: icon + count, matching `nav-bar__cart-badge`, so the two icons read
-   consistently. Confirm before WL-5 starts.
+4. ✓ **Wishlist badge in the desktop nav — icon-only, or icon + count?**
+   **Resolved 2026-08-06, confirmed with owner: icon-only** — no count badge on the
+   desktop `nav-bar` (diverges from `nav-bar__cart-badge`, deliberately). The mobile
+   radial-nav wishlist item keeps its count badge (matching its cart item) — this
+   question was scoped to desktop only.
+
+All open questions resolved — this spec is ready for `/ship-card`.
 
 ## Vertical slices → Trello cards
 
