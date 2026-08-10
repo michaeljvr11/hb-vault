@@ -228,9 +228,14 @@ this only clears in-memory state.
    pre-existing cart-badge-after-logout gap was deliberately left alone as a follow-up, not
    folded into this batch.
 4. **The PDP has no separate hero CTA** — see WL-3 above; this shaped where the toggle landed.
-5. **The `WishlistItems` migration was not executed against a live database** this session
-   (Docker daemon unavailable). SQL was reviewed by reading and cross-checked against the
-   entity, but has not been run.
+5. **The `WishlistItems` migration is applied and verified** (updated 2026-08-10, later the
+   same day — it was initially shipped unrun because the Docker daemon was unavailable).
+   Run against Postgres 16 via Rancher Desktop: it was the only pending migration, and the
+   resulting table matches the entity column-for-column (PK, `IDX_wishlist_items_userId`,
+   `UQ_wishlist_items_userId_productId`, both FKs `ON DELETE CASCADE`). `down()` was exercised
+   too — revert dropped the index and table with no residue, and a re-run reapplied cleanly.
+   The idempotency backstop was confirmed directly: a duplicate `(userId, productId)` insert
+   raises the SQLSTATE 23505 that `WishlistService.addItem` swallows on a concurrent add.
 
 ### Testing
 
