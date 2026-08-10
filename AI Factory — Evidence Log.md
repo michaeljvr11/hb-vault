@@ -10,10 +10,10 @@ tags:
 
 _Source: `npm run evidence`. Refresh each cycle; the repo `REPORT.md` is the source of truth._
 
-**Snapshot (refreshed 2026-08-10T15:23:22.852Z)**
+**Snapshot (refreshed 2026-08-10T16:12:24.339Z)**
 
-- **180** commits (2026-06-11 → 2026-08-10); **169** carry the AI-authorship trailer (**94%**)
-- **+77,390 / −6,934** lines across **611** files
-- **99** test specs compiled from the repo (API 41 · Web 58)
-- Guardrails fired: **20** prod-fence blocks logged (push-to-protected, force-push, `gh pr merge`, merge/rebase on protected — all human-only) · **31** green PR gates · **170** lint issues fed back to agents
-- Traceability (latest): `1DAb9a1I` Admin cross-vendor earnings report (card VE-4, branch `feat/1DAb9a1I-admin-earnings-report`, PR open) — admin earnings dashboard with headline figures (platform commission, held for vendors, platform GMV) and per-vendor earnings table, cross-vendor service layer, `GET /admin/earnings` endpoint. Earlier: VE-3 (`trMZD1C5`) payout-eligibility data model (`deliveredAt` timestamp, commission-rate snapshots, 48h claim window, settlement-period bucketing) and earnings service; still in review. Earlier: VE-2 (`WIZ4pJtk`) admin commission-rate management screen; still in review. Earlier: VE-1 (`QAeB8YGv`) admin-configurable commission-rate history; merged PR #43. See repo `REPORT.md` for complete per-card/per-PR history.
+- **185** commits (2026-06-11 → 2026-08-10); **174** carry the AI-authorship trailer (**94%**)
+- **+79,276 / −7,077** lines across **620** files
+- **101** test specs compiled from the repo (API 42 · Web 59)
+- Guardrails fired: **20** prod-fence blocks logged (push-to-protected, force-push, `gh pr merge`, merge/rebase on protected — all human-only) · **32** green PR gates · **175** lint issues fed back to agents
+- Traceability (latest): `WrPOgQDa` Vendor own-earnings report (card VE-5, branch `feat/WrPOgQDa-vendor-own-earnings`, PR not yet opened) — vendor earnings endpoint + portal UI, eligible-lines-only summary, settlement preview (current bi-weekly + closed periods). Earlier: `1DAb9a1I` Admin cross-vendor earnings (VE-4, PR #47 merged) — admin dashboard with headline figures and per-vendor table. Earlier: `trMZD1C5` (VE-3) payout-eligibility model and earnings engine; `WIZ4pJtk` (VE-2) admin rate-management UI; `QAeB8YGv` (VE-1) commission-rate history, all in review or merged. See repo `REPORT.md` for complete per-card/per-PR history.

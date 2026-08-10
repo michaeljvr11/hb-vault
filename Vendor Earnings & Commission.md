@@ -392,3 +392,44 @@ Order: VE-1 → (VE-2 ∥ VE-3) → (VE-4 ∥ VE-5).
 
 - Out of scope (per card): CSV export, scheduled reports, payout execution, VE-5 (vendor own-earnings — separate card).
 - The earnings-window utility (`resolveEarningsWindow`) is also reused by VE-5.
+## Implementation Notes (VE-5)
+
+**Date:** 2026-08-10  
+**Card:** VE-5 (#74, shortLink `WrPOgQDa`)  
+**Branch:** `feat/WrPOgQDa-vendor-own-earnings`  
+**Status:** PR not yet opened
+
+### What shipped
+
+- **`libs/shared/src/contracts/earnings.ts` additions**: `VendorEarningsQuery` (window/from/to, NO `vendorId` — server-resolved from auth), `EarningsBalanceDto` (`pendingClaimWindowByCurrency`, `accruedByCurrency` — net-only), `SettlementPeriodPreviewDto` (`periodStart`, `periodEnd` [exclusive], `orderCount`, `netByCurrency`, `status: 'open'|'closed'`), `VendorEarningsReportDto` (`from`, `to`, `summary: VendorEarningsSummaryDto`, `balance`, `settlementPreview[]`). `VendorDashboardDto.totalRevenue` doc-comment corrected (gross, not net-of-commission — same fix VE-4 applied to `AdminDashboardDto`).
+- **`apps/api/src/earnings/vendor-earnings.service.ts`**: New `currentSettlementPeriodBounds(now?)` helper — computes the currently-open bi-weekly period's bounds, reusing `SETTLEMENT_ANCHOR_DATE` and period-length math. `getMyEarnings` service method resolves vendor from authenticated `userId` (404 if none — never client-supplied), builds `summary` via eligible-lines-only merge (accrued + closed settlementPreview, excluding pendingClaimWindow), `balance` (net-only split), and `settlementPreview` (closed periods + synthetic `'open'` entry from accrued + current-period-bounds, always present even when zero).
+- **`apps/api/src/vendors/vendor-earnings-report.service.ts`** (new): `VendorEarningsReportService.getMyEarnings` — wraps the vendor-earnings-service logic with `@Roles(VENDOR)` ownership isolation.
+- **`GET /vendors/me/earnings` endpoint** in `VendorsController` (route order: before `GET :id` for precedence). Mirrors `me/dashboard`/`me/analytics` pattern.
+- **`apps/web/src/app/core/api/vendor-earnings.service.ts`** (new): HTTP service wrapping `GET /vendors/me/earnings`.
+- **`apps/web/src/app/features/vendor/pages/vendor-earnings/`** (new standalone component): gross/service-fee/net summary table per currency, balance split ("Awaiting 48-hour claim window" / "Accrued and eligible"), settlement-period table (Current period vs Closed), persistent "statement, not a payment" notice + plain-language eligibility rule. Reuses `AdminEarnings`'s UTC-pinned month-label technique (SSR-safe). Route `/vendor/earnings`, nav entry "Earnings" in vendor portal.
+- **14 new/extended backend unit tests**: ownership isolation, zero-activity result, gross-derived-identity, eligible-lines-only exclusion, open/closed settlement invariants, ZAR/NAD separation, window resolution, direct `currentSettlementPeriodBounds` coverage (boundary-exact, pre-anchor, clock default), and report-level assertion that open period bounds are sourced from the helper.
+- **Vitest specs** (`vendor-earnings.spec.ts` new, `vendor-shell.spec.ts` updated): load/loaded/empty/error states, window-tab refetch, nav entry for "Earnings".
+
+### Key decisions for the record
+
+1. **`periodEnd` is exclusive in contract but rendered as the last inclusive day** — code review caught UI bug where `periodEnd` was rendered raw (boundary-inclusive in appearance), making adjacent periods visually overlap. Fixed: render `periodEnd - 1 day` instead. Settlement-table caption clarified window-scoping.
+
+2. **Vendor-side `summary` logic is eligible-lines-only merge, not imported from VE-4's private methods** — deliberately duplicated (mirrors but does not import `AdminEarningsService`'s private `eligibleTotals`/`deriveGross`), documented as such. Not a DRY violation, a deliberate isolation (those methods are private to already-merged code; reusing would require making them public mid-chain).
+
+3. **Ownership always server-resolved, never client-supplied.** `VendorEarningsQuery` has no `vendorId` field. `getMyEarnings` uses authenticated `userId` to look up the vendor (404 if auth context has no vendor).
+
+### Review & test outcome
+
+- `npm run test:api`: 586/586 pass (42 suites, +14 vs VE-4 baseline).
+- `npm run test -w @hb/web`: 725/725 pass (59 files).
+- `npm run lint:api`: clean.
+- `npm run build`: clean (shared → api → web); pre-existing SCSS budget warnings on `admin-catalog.scss`, `vendor-profile.scss` are unrelated.
+- **Code-reviewer pass found 2 blocking issues, fixed before PR:**
+  1. **`currentSettlementPeriodBounds` had zero direct test coverage** — new accounting-adjacent helper with no unit tests despite money-logic classification. Added direct coverage (boundary-exact, pre-anchor, default-clock) + report-level assertion.
+  2. **`periodEnd` rendered as inclusive date** — visually implied adjacent settlement rows shared a boundary day. Fixed: render last-inclusive-day value instead. Added window-scoping caption to settlement table.
+- **Non-blocking advisory:** vendor-side `summary` duplicates VE-4's private eligible-merge logic; also flagged 5th copy of `CURRENCY_SYMBOLS`/`formatMoney`, accessor sprawl in `vendor-earnings.ts`, verbose HttpParams builder — documented as candidate follow-up, not fixed in this slice.
+
+### Scope explicit
+
+- Out of scope (per card): bank details, payout execution, invoices/statements as PDF, CSV export, scheduled reports, cancellation-fee amount, real refund flow, minimum payout amount, per-vendor negotiated commission rates.
+- **Closes VE-1→VE-5 vertical-slice chain for "Vendor Earnings & Commission".** VE-1 (rate history) → (VE-2 [admin UI] ∥ VE-3 [eligibility engine]) → (VE-4 [admin report] ∥ VE-5 [vendor report]) — all five shipped.
