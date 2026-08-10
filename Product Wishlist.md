@@ -122,8 +122,12 @@ No changes to `CartDto`, `ProductDto`, or `AnalyticsEventType`.
 - **A "no longer available" tombstone row.** `Product` has no soft-delete or publish flag
   (no `isActive`/`status` column), so deleted products vanish via the FK cascade. Adding a
   tombstone means adding product soft-delete first — a separate card. See open question 3.
-- **Rendering `<app-radial-nav>` beyond `/shop`.** It is only used in `shop.html` today, so
-  mobile wishlist nav reach is the storefront home only. Not expanded here.
+- **Rendering `<app-radial-nav>` beyond `/shop`.** ~~It is only used in `shop.html` today, so
+  mobile wishlist nav reach is the storefront home only.~~ **Correction (2026-08-10, found
+  during WL-5 implementation): this claim was wrong.** `<app-radial-nav>` is rendered on four
+  templates — shop, discover, product-detail, and vendor-profile — all already binding
+  `[cartCount]`. See Implementation Notes below. Radial-nav's page *reach* (which pages render
+  it) is unchanged by this batch — still not added to new pages. Not expanded here.
 
 ## Open questions (confirm before /ship-card)
 
@@ -159,3 +163,78 @@ Order: WL-1 → WL-2 → {WL-3, WL-4 in parallel} → WL-5.
 **Known conflict:** WL-5 touches `radial-nav.ts`'s items array and `shop.ts`'s `labels` map —
 the same lines as the in-flight PR wiring the radial-nav `profile` item to `routerLink="/profile"`.
 Rebase on that PR; do not revert its change.
+
+## Implementation Notes (2026-08-10)
+
+Shipped as five slices on one branch, `feat/rtBV85cQ-product-wishlist`, one PR for the whole
+batch: [hb-mono-repo#49](https://github.com/michaeljvr11/hb-mono-repo/pull/49).
+
+**WL-1 — API + contract** (`rtBV85cQ`): `libs/shared/src/contracts/wishlist.ts` —
+`WishlistItemDto`/`WishlistDto`/`AddWishlistItemRequest`, no `quantity`/`lineTotal`/`totals`;
+`itemCount` is a row count; field is `price`, not the cart's `unitPrice`. Migration
+`1784678400000-WishlistItems.ts` — single `wishlist_items` table, `UNIQUE (userId, productId)`,
+FK CASCADE on both `userId` and `productId`, index on `userId`. `apps/api/src/wishlist/`
+mirrors `cart/`: `GET /wishlist`, `POST /wishlist/items`, `DELETE /wishlist/items/:productId`,
+all behind the global `JwtAuthGuard`. Non-owned row → plain 404, never 403. `POST` is
+idempotent (200, unchanged list; a concurrent-insert 23505 is swallowed) and deliberately does
+**not** reject out-of-stock products. Price/currency/stock/image resolved live at read time.
+
+**WL-2 — web service + heart toggle** (`MiiSqOS5`): `wishlist.service.ts`, signal-backed,
+modelled on `CartService`; `has(productId)` backed by a derived `Set` for O(1) membership.
+`ProductCard` stays presentational (`wishlisted` input / `wishlistToggle` output, no injected
+service), wired into shop, discover, public vendor profile, and the PDP related-products grid.
+Anonymous click → `/login?returnUrl=<current url>`. Hydration-gated with the `hydrated` signal
++ `afterNextRender` pattern from `nav-bar.ts`. No optimistic mutation.
+
+**WL-3 — PDP toggle** (`RrgIdrIo`): toggle placed next to the sticky bar's add-to-cart CTA —
+the PDP has no separate hero CTA (`pdp__hero` is the image gallery). Reuses WL-2's hydration
+gate and `isWishlisted()`. The anonymous gate was extracted into one shared
+`redirectAnonymous()` helper now used by add-to-cart and both wishlist toggles. Add-success
+snackbar offers a "View wishlist" action to `/wishlist`.
+
+**WL-4 — `/wishlist` page** (`zG9zNAh8`): `apps/web/src/app/features/wishlist/`,
+`canActivate: [authGuard]`, `RenderMode.Client` (its guard depends on `localStorage`, so the
+`**` → `RenderMode.Server` default would always bounce to `/login`). Loading/loaded/empty/error
+states; out-of-stock rows keep their place with a badge and a disabled add-to-cart; removal
+re-renders from the server response, never a local splice. `ProductCard` was **not** reused —
+it takes `ProductDto`, a wishlist row is `WishlistItemDto`, and it has no remove/out-of-stock
+affordance; the row is modelled on the cart line item instead.
+`docs/design/wishlist/export.html` + `README.md` are hand-authored, not synced from Claude
+Design (DesignSync needs an interactive login, unavailable this session) — same precedent set
+by the vendor-profile screen.
+
+**WL-5 — nav entry + badge** (`L54YO6fI`): radial-nav wishlist item gets
+`routerLink: '/wishlist'` and stops emitting `itemSelected`; `shop.ts`'s "Wishlist is coming
+soon" branch and its stale spec assertions were deleted. Badge markup went into the
+`@if (item.routerLink)` branch, not the `@else` button branch where the cart badge lives —
+giving the item a `routerLink` moves it across that boundary. Desktop nav-bar wishlist button
+is icon-only, no count badge (owner-confirmed divergence from `nav-bar__cart-badge`), asserted
+by a spec test so it isn't "fixed" later. `WishlistService.reset()` was added to
+`AuthService.logout()` — wishlist rows are account-bound in Postgres and survive sign-out, so
+this only clears in-memory state.
+
+### Decisions taken during the batch, not already recorded above
+
+1. **`<app-radial-nav>` is not `/shop`-only** — the spec's Out-of-scope claim was wrong; see
+   the correction inline above. It renders on four templates (shop, discover, product-detail,
+   vendor-profile), all already binding `[cartCount]`. `[wishlistCount]` was bound on all four
+   — binding one page only would have shown the badge there and silently nowhere else.
+   Radial-nav's page reach itself is unchanged.
+2. **WL-5's Trello card contradicted the spec** on the desktop badge: it asked for a
+   `nav-bar__wishlist-badge`, but the spec's resolved open question 4 says icon-only. The spec
+   won — re-confirmed with the owner during this batch.
+3. **WL-5's card assumed `CartService.reset()` was already wired into logout.** It isn't — only
+   `checkout.ts` calls it, after order placement. Only the wishlist reset was added here; the
+   pre-existing cart-badge-after-logout gap was deliberately left alone as a follow-up, not
+   folded into this batch.
+4. **The PDP has no separate hero CTA** — see WL-3 above; this shaped where the toggle landed.
+5. **The `WishlistItems` migration was not executed against a live database** this session
+   (Docker daemon unavailable). SQL was reviewed by reading and cross-checked against the
+   entity, but has not been run.
+
+### Testing
+
+`npm run lint:api` clean · `npm run test:api` 606 passed · `npm run test -w @hb/web` 777
+passed · `npm run build` clean. Code review returned no FAIL items. A follow-up coverage audit
+closed two gaps: hydration-gate tests (one per host page, asserting hearts read empty
+pre-hydration) and the unique-violation race branch in `addItem`.
