@@ -344,3 +344,51 @@ Order: VE-1 → (VE-2 ∥ VE-3) → (VE-4 ∥ VE-5).
    + UI. Depends on VE-3.
 5. **VE-5** (#74, `WrPOgQDa`) — Vendor own-earnings: `GET /vendors/me/earnings` +
    portal screen. Depends on VE-3.
+
+## Implementation Notes (VE-4)
+
+**Date:** 2026-08-10  
+**Card:** VE-4 (#73, shortLink `1DAb9a1I`)  
+**Branch:** `feat/1DAb9a1I-admin-earnings-report`  
+**Status:** PR open, not yet merged
+
+### What shipped
+
+- **`libs/shared/src/contracts/earnings.ts` additions**: `EarningsWindow` type (`'1w' | '2w' | '1m'`), `EARNINGS_WINDOWS` const array (single source of truth, feeding `@IsIn(EARNINGS_WINDOWS)` validator — code review fix: was duplicated as a literal union, now const-sourced so validator and consumers stay in sync), `AdminEarningsQuery` DTO, `VendorEarningsSummaryDto` (per-vendor row: `vendorId`, `businessName`, `orderCount`, `grossByCurrency`, `commissionByCurrency`, `netByCurrency`), `AdminEarningsReportDto` (`from`, `to`, `vendors: VendorEarningsSummaryDto[]`, plus the three headline figures `platformCommissionByCurrency`, `platformListingGmvByCurrency`, `heldForVendorsByCurrency`). `AdminDashboardDto`'s old `platformRevenue`/`vendorRevenue` doc-comments corrected (fields unchanged) to point to the new earnings report.
+- **`apps/api/src/common/utils/earnings-window.utils.ts` (new)**: `resolveEarningsWindow(query: AdminEarningsQuery, now = new Date())` — resolves the query's `window`/`from`/`to` to a date range. `'1w'`/`'2w'` are trailing periods from `now` back in time (matching `AdminAnalyticsQuery`'s convention). `'1m'` is the current UTC calendar month (`1st → now`), or full past month if `from`/`to` are explicit. Explicit `from`/`to` always override the `window` preset and must be supplied together (throws if only one is present).
+- **`apps/api/src/earnings/vendor-earnings.service.ts` extension**: Gained `getEarningsByVendor(scope: { vendorId?: string }, from: Date, to: Date, now?: Date)` — grouped-by-vendor query path built alongside VE-3's existing `getEarnings()` (left untouched). Additionally exposes `commissionAmount` alongside `netAmount` at every eligibility bucket (VE-3 only exposed net; VE-4 needed both for per-vendor row `grossByCurrency`/`commissionByCurrency`/`netByCurrency` split).
+- **`apps/api/src/admin/admin-earnings.service.ts` (new)**: `AdminEarningsService.getReport(query: AdminEarningsQuery)` — assembles the three headline figures (`platformCommissionByCurrency`: sum of commission from all vendors with eligible activity, including inactive vendors; `platformListingGmvByCurrency`: sum of gross from platform-owned lines only; `heldForVendorsByCurrency`: VE-3's `accrued` bucket as-of-now, NOT window-scoped), pulls per-vendor rows via `VendorEarningsService.getEarningsByVendor()`, and returns `AdminEarningsReportDto`. Inherits `@Roles(ADMIN)` from `AdminController`.
+- **`apps/api/src/admin/admin.controller.ts`**: New `GET /admin/earnings` endpoint wired to `AdminEarningsService.getReport()`, decorated with `@Query() query: AdminEarningsQueryDto` for window + `vendorId` filter + explicit date range support.
+- **`apps/web/src/app/features/admin/pages/admin-earnings/` (new standalone component)**: Renders headline figures (three prominent cards: platform commission, held for vendors, platform GMV), a "Last week" / "Last 2 weeks" / "Last month" tab group (the "Last month" label derived from `report().from` with explicit `timeZone: 'UTC'` to avoid SSR/browser clock-boundary mismatches), and a table of `VendorEarningsSummaryDto` rows (columns: business name, order count, gross, commission, net — one line per currency within each money cell, not summed). Fetches on mount and on tab change. Error/loading states included. No `vendorId` filter control in the UI yet — the API supports it, but this slice only wires the window tabs.
+- **Admin route**: New `/admin/earnings` route added to `apps/web/src/app/app.routes.ts` with lazy-loaded `AdminEarningsComponent`.
+- **Admin nav entry**: "Earnings Report" sidebar nav item in `apps/web/src/app/features/admin/admin-shell/` pointing to `/admin/earnings`.
+- **Tests**: 571/571 API (41 suites, +2 new suites in `admin-earnings.service.spec.ts`), 712/712 web (58 files, +1 suite in admin-earnings component spec), full build clean.
+
+### Key decisions for the record
+
+1. **Per-vendor table scope resolution — explicitly flagged and answered before implementation.** The card's AC only mandated the three headline figures; `VendorEarningsSummaryDto`'s per-vendor row scope was left open (eligible-lines-only vs. all-delivered-lines-including-pending). This fork was surfaced to the developer via `AskUserQuestion` (genuine blockers go up, not down). Resolution: **eligible-lines-only** — sum of the vendor's `accrued` + `settlementPreview` buckets, entirely excluding the `pendingClaimWindow` bucket. This aligns the vault's "commission on eligible lines, not gross GMV" framing and makes per-vendor totals reconcile with the headline figures in the common case (all current vendors are `APPROVED`). Documented on the contract's `VendorEarningsSummaryDto` doc-comment.
+
+2. **`platformCommissionByCurrency` is deliberately NOT narrowed to only currently-`APPROVED` vendors.** It sums every vendor with eligible activity in the date range, even if suspended/rejected after the fact, because that commission is real historical platform revenue regardless of vendor status. This means the headline sum can exceed Σ of per-vendor Commission column when a non-approved vendor had activity — intentional and documented in both the contract doc-comment and the UI caption. Explicitly unit-tested: "platformCommissionByCurrency counts a vendor with activity even when absent from the currently-APPROVED vendors[] list".
+
+3. **`heldForVendorsByCurrency` is a current-moment snapshot, not window-scoped like the rest of the report.** It's VE-3's `accrued` bucket relative to the real clock at request time, so querying a past month still reports what's held *right now*. Documented on the contract after code review flagged it as a likely point of confusion (the three headline figures look temporal but one is atemporal).
+
+4. **`vendorId` filter narrows the entire report, including headline figures.** The AC left this open. Chosen as the least-surprising behavior for a filtered admin view (e.g., "show earnings only for vendor X" => headline figures are also scoped to X). `platformListingGmvByCurrency` correctly resolves to empty under a `vendorId` filter (platform lines carry no vendor id, so no special-case branch needed).
+
+5. **Code review caught two real pre-release bugs.** (a) The API spec's mocked query builder was asserting hardcoded filters (`listingType = PLATFORM`, `status != CANCELLED`) inside `getMany()` rather than capturing actual bind params — meaning if a filter dropped from production, tests stayed green. Fixed: now genuinely captures and filters on every bind param, with new test coverage for vendor-line exclusion and non-delivered-order inclusion. (b) Web "Last month" tab label computed from client clock (`new Date()`) at field-init without explicit timezone — a real SSR/hydration text-mismatch risk at month boundaries. Fixed: label derived from the loaded report's own `from` field with explicit `timeZone: 'UTC'`.
+
+6. **Money-math discipline: integer-cents rounding for `platformListingGmv` accumulation.** Originally accumulated in floating-point decimal; switched to integer cents (matching `VendorEarningsService.splitGrossNetCents` pattern elsewhere in the codebase) during code review to prevent float-drift errors at scale.
+
+### Review & test outcome
+
+- `npm run test:api`: 571/571 pass (41 suites, +2 for admin-earnings service).
+- `npm run test -w @hb/web`: 712/712 pass (58 files, +1 suite for admin-earnings component).
+- `npm run lint:api` / `npm run lint -w @hb/web`: both clean.
+- `npm run build` (root): clean (shared → api → web).
+- Code-reviewer pass found 2 blocking issues, both fixed before PR:
+  1. **Query-builder test assertion drift** — mocked filters hardcoded instead of captured. Fixed by capturing all bind params and asserting on them; new test ensures vendor-line and status filters actually apply.
+  2. **SSR hydration text-mismatch on "Last month" tab** — label computed from browser clock without timezone. Fixed: label derived from `report.from` with explicit `timeZone: 'UTC'`.
+
+### Scope explicit
+
+- Out of scope (per card): CSV export, scheduled reports, payout execution, VE-5 (vendor own-earnings — separate card).
+- The earnings-window utility (`resolveEarningsWindow`) is also reused by VE-5.

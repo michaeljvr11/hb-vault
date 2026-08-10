@@ -6,10 +6,14 @@ tags:
   - hackathon
 ---
 
-# AI Factory — Evidence Log_Source: `npm run evidence`. Refresh each cycle; the repo `REPORT.md` is the source of truth._Snapshot (refreshed 2026-08-03T20:36:53.569Z)
+# AI Factory — Evidence Log
 
-- **175** commits (2026-06-11 → 2026-08-03); **164** carry the AI-authorship trailer (**94%**)
-- **+74,715 / −6,704** lines across **599** files
-- **95** test specs compiled from the repo (API 39 · Web 56)
-- Guardrails fired: **20** prod-fence blocks logged (push-to-protected, force-push, `gh pr merge`, merge/rebase on protected — all human-only) · **31** green PR gates · **165** lint issues fed back to agents
-- Traceability (latest): d7IHQ8Rm Vendor Profile Section Builder (card d7IHQ8Rm PR #41) — vendor portal product section builder, curated sections UI, section CRUD endpoints, server-side ownership guard (owner can only reference own products), validation on section assignment. Earlier: PR #42 rHxbUA2G Vendor Branding Public Render — render vendor branding + profile sections on public `/vendors/:id` page, design + web UI, marketing-focused display of vendor customization; still in review. Earlier: PR #40 y3fz4TC2 Vendor Profile Editor — vendor portal editor for hero image/name/badge, section management UI; 4 commits; test/review SHIP. Earlier: PR #38 AAjMPwV7 Vendor Logo & Banner Upload Endpoints — owner-scoped `POST /vendors/me/logo` + `/banner`, reusing the products image-upload pattern into `uploads/vendors`; 3 commits; two review rounds (FIX-FIRST caught disk-storage FileTypeValidator false-reject and stored-XSS risk in filename); test/review SHIP. Earlier: PR #37 ZpvX9XIv Vendor Branding + Profile-Sections Contract (card ZpvX9XIv #64) — `@hb/shared` vendor branding/profile-sections contract + schema + owner-scoped write, server-side ownership guard, 3 commits; two review rounds (FIX-FIRST caught ownership-guard bypass); test/review SHIP; see repo `REPORT.md` for complete per-PR history.
+_Source: `npm run evidence`. Refresh each cycle; the repo `REPORT.md` is the source of truth._
+
+**Snapshot (refreshed 2026-08-10T15:23:22.852Z)**
+
+- **180** commits (2026-06-11 → 2026-08-10); **169** carry the AI-authorship trailer (**94%**)
+- **+77,390 / −6,934** lines across **611** files
+- **99** test specs compiled from the repo (API 41 · Web 58)
+- Guardrails fired: **20** prod-fence blocks logged (push-to-protected, force-push, `gh pr merge`, merge/rebase on protected — all human-only) · **31** green PR gates · **170** lint issues fed back to agents
+- Traceability (latest): `1DAb9a1I` Admin cross-vendor earnings report (card VE-4, branch `feat/1DAb9a1I-admin-earnings-report`, PR open) — admin earnings dashboard with headline figures (platform commission, held for vendors, platform GMV) and per-vendor earnings table, cross-vendor service layer, `GET /admin/earnings` endpoint. Earlier: VE-3 (`trMZD1C5`) payout-eligibility data model (`deliveredAt` timestamp, commission-rate snapshots, 48h claim window, settlement-period bucketing) and earnings service; still in review. Earlier: VE-2 (`WIZ4pJtk`) admin commission-rate management screen; still in review. Earlier: VE-1 (`QAeB8YGv`) admin-configurable commission-rate history; merged PR #43. See repo `REPORT.md` for complete per-card/per-PR history.
