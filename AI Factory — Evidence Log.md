@@ -7,13 +7,12 @@ tags:
 ---
 
 # AI Factory — Evidence Log
-
 _Source: `npm run evidence`. Refresh each cycle; the repo `REPORT.md` is the source of truth._
 
-**Snapshot (refreshed 2026-08-10)**
+**Snapshot (refreshed 2026-08-12)**
 
-- **191** commits (2026-06-11 → 2026-08-10); **180** carry the AI-authorship trailer (**94%**)
-- **+79,276 / −7,077** lines across **620** files
-- **105** test specs compiled from the repo
-- Guardrails fired: **20** prod-fence blocks logged (push-to-protected, force-push, `gh pr merge`, merge/rebase on protected — all human-only) · **32** green PR gates · **175** lint issues fed back to agents
-- Traceability (latest): `WrPOgQDa` Vendor own-earnings report (card VE-5, branch `feat/WrPOgQDa-vendor-own-earnings`, PR not yet opened) — vendor earnings endpoint + portal UI, eligible-lines-only summary, settlement preview (current bi-weekly + closed periods). Earlier: `1DAb9a1I` Admin cross-vendor earnings (VE-4, PR #47 merged) — admin dashboard with headline figures and per-vendor table. Earlier: `trMZD1C5` (VE-3) payout-eligibility model and earnings engine; `WIZ4pJtk` (VE-2) admin rate-management UI; `QAeB8YGv` (VE-1) commission-rate history, all in review or merged. See repo `REPORT.md` for complete per-card/per-PR history.
+- **199** commits (2026-06-11 → 2026-08-12); **188** carry the AI-authorship trailer (**94%**)
+- **+82,567 / −7,902** lines across **639** files
+- **106** test specs compiled from the repo
+- Guardrails fired: **21** prod-fence blocks logged (push-to-protected, force-push, `gh pr merge`, merge/rebase on protected — all human-only) · **34** green PR gates · **173** lint issues fed back to agents
+- Traceability (latest): `IP59Crue` / `7sclIgtI` / `BP5q32o4` Storefront UI cleanup batch (cards UIC-1/2/3, branch `feat/IP59Crue-storefront-ui-cleanup`, PR open) — removed dead nav items + "SME Verified" badge concept, centralised snackbar config with Material token fixes, global box-sizing reset + PDP sticky-bar sizing. Earlier: `rtBV85cQ` Product wishlist (WL-1–5, PR #49 in review) — signal-backed `wishlist_items` table + API + UI. Earlier: customer profile batch, admin audit log, analytics & reporting — see repo `REPORT.md` for complete per-card/per-PR history.
