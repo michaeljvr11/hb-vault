@@ -1,7 +1,7 @@
 # Landing Site Migration
 
 Front-of-funnel spec. Implementation flows through `/ship-card` — no code here.
-Status: **specced 2026-08-13**, awaiting decisions OQ1–OQ5 before `/ship-card`.
+Status: **decisions confirmed 2026-08-13** (see Decisions below) — ready for `/ship-card`.
 Related: [[Public Storefront & SSR]] · [[Auth & Roles]] · [[HB Domain Model]] · [[Transactional Email & Order Notifications]] · [[Cross-Border & Customs]] · [[Storefront UI Cleanup Batch]]
 
 ## Problem
@@ -68,8 +68,10 @@ hb-ecommerce.com today. The work here is building the *new* `apps/web` pages so 
 carry "coming soon" framing to begin with — correct regardless of when launch actually
 happens. The public switchover (DNS, redirects, retiring hb-landing, the announcement itself)
 is a separate ops + marketing effort gated on vendor count, payment gateway, and the launch
-plan from `16-marketing-strategy.md`. See OQ2 below — **confirm with Michael before treating
-"the marketplace is live" as fact anywhere public-facing.**
+plan from `16-marketing-strategy.md`.
+
+**Confirmed by Michael (2026-08-13): still pre-launch.** Proceed exactly as scoped in this
+note — build the pages now, launch-neutral copy, no hb-landing or public-facing change.
 
 ## Concrete before-state in hb-landing (what "coming soon" means today)
 
@@ -107,6 +109,27 @@ hb-landing indirects these through `src/app/shared/constants/image.constants.ts`
 scattering raw asset-path strings through templates. Favicons/`apple-touch-icon`/
 `site.webmanifest` are optional — see Out of scope.
 
+### Design tokens (confirmed 2026-08-13 — see Decisions)
+
+A hybrid, not a full swap: hb-landing's raw colors and pill-button shape come across;
+its Angular Material theme and font do not.
+
+- `docs/design/DESIGN.md` + `apps/web/src/styles.scss` `--hb-primary` moves from `#015300`
+  to hb-landing's raw green **`#2e7d32`**; `--hb-secondary` moves from `#964900` to
+  hb-landing's raw orange **`#f57c00`** (both sourced from hb-landing's
+  `--hb-green-raw`/`--hb-orange-raw`, not the Material-tone-generated variants, since no
+  Material theme is being introduced).
+- New button-radius token — pill-shaped primary/CTA buttons (`border-radius: 9999px`,
+  matching hb-landing's global button override). `DESIGN.md`'s spacing/shape table already
+  lists `full` as a defined radius value; this is that value applied to buttons specifically.
+- **Do not** add `@angular/material` theming (`mat.define-theme`, `mat.$green-palette` /
+  `mat.$orange-palette`) — apps/web continues to load no Material theme, per its current
+  `styles.scss`.
+- **Do not** change the font — stays `Inter`, not `Plus Jakarta Sans`.
+- Re-check contrast: `--hb-on-primary`/`--hb-on-secondary-container` (white / dark text used
+  against these fills) must still meet WCAG AA against the new hex values before shipping —
+  the old and new greens/oranges are close in luminance but not identical.
+
 ### Routes (all net-new)
 
 `/about`, `/services`, `/contact` — standalone components, signals, new control-flow syntax,
@@ -133,14 +156,15 @@ the "Ready to Bridge the Gap with Us?" / "Get in Touch" CTA → `/contact`. Hero
 "How It Works – Simple 4 Steps" process. **Delete the entire teaser section** at
 `services.html:84` and replace it with a live cross-link into the marketplace (`/shop`) plus
 a clear statement that sourcing is the complementary standing service for anything not
-listed. Margin tiers may be stated but must match `07-business-model.md` exactly if so. Hero
-image `services-shopping-cart.png`.
+listed, publicly named **"Procurement Service"** (see Decisions — matches the internal name
+in `07-business-model.md`, no public alias needed). Margin tiers may be stated but must match
+`07-business-model.md` exactly if so. Hero image `services-shopping-cart.png`.
 
 **`/contact`** — "Send us a Message" form + "Or Message Us on WhatsApp" + "Other Contact
 Options". Contact details from hb-landing `site.constants.ts`: `+264 81 355 9921`,
 `info@hb-ecommerce.com`, and the two `wa.me/264813559921` deep links. This is the "source me
-something not listed on the site" channel. Submit target is **OQ4**. Hero image
-`contact-hero-image.jpg`.
+something not listed on the site" channel. Submits to `POST /inquiries` (LSM-5 — see
+Decisions). Hero image `contact-hero-image.jpg`.
 
 ### Footer / header wiring
 
@@ -158,7 +182,7 @@ Do not remove it.
 
 ## @hb/shared contract impact
 
-**None — unless OQ4 resolves to "backend."** If it does:
+**Confirmed (see Decisions — contact form wires into apps/api):**
 
 - New `libs/shared/src/contracts/inquiry.ts` (no contact/inquiry contract exists today) —
   shape derived from hb-landing's `ContactInquiry`: `name`, `email`, `phone`, `orderType`,
@@ -192,47 +216,27 @@ Do not remove it.
 - Remaining dead `href="#"` footer links for genuinely unbuilt features (Shipping Policy,
   Terms of Trade, Export Documentation, Success Stories).
 
-## Open questions (confirm before `/ship-card`)
+## Decisions (confirmed by Michael, 2026-08-13)
 
-1. **Design tokens & typography — which system wins?** hb-landing is `mat.$green-palette` /
-   `mat.$orange-palette`, `Plus Jakarta Sans`, and pill buttons (`border-radius: 9999px` on
-   every `mat-button` variant). `docs/design/DESIGN.md` (canonical, Claude Design, migrated
-   2026-06-18) is `--hb-primary #015300`, `--hb-secondary #964900`, `Inter`, radius 8/12px.
-   **Recommendation: Claude Design tokens win** — logo, imagery, and copy migrate as-is and
-   get reskinned to match. Not just because it's the documented source: `apps/web` currently
-   loads **no Angular Material theme at all** (`styles.scss` says so explicitly — it's what
-   caused the snackbar token bug fixed in commit `96a2a3d`). hb-landing's look is delivered
-   *through* a Material theme, so adopting it means introducing one and restyling every
-   Material control across storefront, checkout, vendor, and admin portals (7 implemented
-   screens), diverging from the `docs/design/claude-design/` sync bundle in the process.
-   Softening note: `--hb-secondary #964900` / `--hb-secondary-fixed #ffdcc7` already *is* an
-   orange earth-tone, so the green+orange pairing largely survives either way. If the
-   pill-button signature specifically is wanted, that's a small additive radius-token change
-   independent of the theme question. **Needs Michael's confirmation before LSM-1 starts.**
-2. **Do we actually say "the marketplace is live" anywhere public-facing?** See the Conflict
-   section — v1 targets 1 Oct 2026, 2/10 vendors, no gateway, no launch plan.
-   **Recommendation:** build all three pages now with launch-neutral copy that never says
-   "coming soon" and never claims a launch moment; leave hb-landing untouched; treat the
-   public switchover as its own, separately-gated effort.
-3. **Brand name — apps/web currently ships four variants.** "H&B Market" (nav-bar, footer,
-   vendor/admin/profile shells), "H&B Cross-Border Marketplace" (footer copyright, login
-   footer), "H&B Marketplace" (auth aria-labels), "H&B E-Commerce" (`environment.ts`
-   `appName`, and the live domain). No canonical answer exists in H&B Brain.
-   **Recommendation:** pick one customer-facing wordmark and sweep it everywhere. Pure
-   founder call.
-4. **Contact form: keep EmailJS, or wire it into `apps/api`?** hb-landing's
-   `contact.service.ts` posts client-side to EmailJS with `serviceId`/`templateId`/
-   `publicKey` hardcoded, no backend call at all. **Recommendation: wire it to `apps/api`.**
-   Porting EmailJS as-is would violate `apps/web/CLAUDE.md` ("Frontend env files hold only
-   `apiBaseUrl` + flags. No secrets, no provider keys"); `MailService` already exists to
-   reuse; and a persisted inquiry gives `15-customer-support.md`'s "simple shared issue log"
-   (an accepted gap today) nearly for free. Cost: a new shared contract, DTO, entity,
-   migration, endpoint (LSM-5). Cheaper interim: keep EmailJS behind a `ContactService` seam
-   and swap the transport later without touching the component.
-5. **Public name for the sourcing engine.** H&B Brain calls it "Procurement Service";
-   hb-landing calls it "Personal & Business Import Service." **Recommendation:** pick one
-   public-facing name for `/services` and the footer; if it differs from the internal name,
-   update `07-business-model.md` to note the public-facing alias.
+1. **Design tokens & typography — hybrid.** hb-landing's raw green/orange colors
+   (`#2e7d32`/`#f57c00`) and pill-shaped buttons come across; its Angular Material theme and
+   `Plus Jakarta Sans` font do not. `apps/web` stays theme-free (no `mat.define-theme`) and
+   keeps `Inter`. Full detail in Scope → Design tokens above.
+2. **"The marketplace is live" — not yet, still pre-launch.** Matches H&B Brain's roadmap
+   (v1 targets 1 Oct 2026, 2/10 vendors, no gateway, no launch plan). Build all three pages
+   now with launch-neutral copy that never says "coming soon" and never claims a launch
+   moment; hb-landing stays untouched; the public switchover is its own, separately-gated
+   effort — not part of this card set.
+3. **Brand name — "H&B E-Commerce."** Sweep it across `nav-bar.html`, `footer.html` (brand
+   heading + copyright line), auth-screen aria-labels/footers, vendor/admin/profile shells,
+   and `environment*.ts` `appName`, replacing "H&B Market" / "H&B Marketplace" / "H&B
+   Cross-Border Marketplace" everywhere they appear.
+4. **Contact form — wires into `apps/api`.** New `POST /inquiries` endpoint, DB record,
+   notification via the existing `MailService`. No EmailJS in the migrated app. Full detail
+   in @hb/shared contract impact above (LSM-5).
+5. **Public name for the sourcing engine — "Procurement Service."** Matches the internal
+   name already used in `07-business-model.md`; no public-facing alias needed, no vault
+   update required.
 
 ## Vertical slices → Trello cards
 
@@ -245,6 +249,7 @@ Do not remove it.
 | LSM-5 | `POST /inquiries` contact endpoint (blocked on OQ4) | 9y69dIul |
 | LSM-6 | Footer/nav wiring + brand-name consistency sweep | TkbgWKL2 |
 
-Order: LSM-1 first (assets + token decision unblock everything visual). LSM-2/3/4 are
-independent of each other. LSM-5 only if OQ4 resolves to "backend." LSM-6 last — it links
-routes that LSM-2/3/4 create.
+Order: LSM-1 first (assets + tokens unblock everything visual). LSM-2/3/4 are independent of
+each other. LSM-5 can run in parallel with LSM-4 (backend endpoint while the frontend seam is
+built) or right after. LSM-6 last — it links routes that LSM-2/3/4 create and needs the
+brand-name sweep to be unambiguous.
