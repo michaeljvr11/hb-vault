@@ -343,6 +343,51 @@ Throws `NotFoundException` only if vendor id doesn't exist.
 
 **TE-4 outstanding:** `MailService.send()` remains `private`. TE-4's listener needs a public method (e.g., `sendOrderPaidVendor()`) or visibility widened. Record for TE-4 planning — single loose thread.
 
+**TE-4 & TE-5: Order-paid event & notifications (2026-08-15)**
+
+**Branch:** `feat/wygImWJb-order-paid-notifications` (4 commits)  
+**Status:** Ready for PR (open on merge, human approval required per CLAUDE.md)
+
+**Event & domain emission:**
+- New `OrderEvents.PAID = 'order.paid'` in `apps/api/src/common/events/domain-events.ts`, payload `{ orderId: string }`.
+- Emitted from `OrdersService.capturePayment()` at the `PaymentStatus.PAID` branch (`:346-351` of base code) immediately after order is saved as `confirmed`. Never on PENDING or FAILED.
+
+**Notification fan-out rule (per paid order):**
+- **N vendor emails:** one per distinct `vendorId`, each containing only that vendor's `order_items` lines (no order total, no commission/earnings figures).
+- **1 platform email:** to every address in `PlatformSettingsService.get().notificationEmails`; includes full line list + order total + all vendors; skipped with warning if list is empty.
+- **1 customer email (TE-5 follow-up):** full line list + order total to `order.user.email`; skipped with warning if user relation is unloaded.
+- **Platform-only orders** (`vendorId` all null): 0 vendor emails + 1 platform email + 1 customer email.
+
+**Isolation & failure model (v1 trade-off — accepted, documented):**
+- Each send (each vendor, platform, customer) wrapped in `safely()` catch-log-swallow pattern (modelled on `SearchIndexerService`).
+- One recipient's failure never blocks another's.
+- **No daily-reindex safety net exists for notifications:** a lost `order.paid` event or failed send is silently lost (warning logged only). This is a deliberate v1 decision, not an oversight — no durable queue or retry mechanism.
+
+**Implementation details:**
+- New listener `OrderNotificationsListener` (`OrderNotificationsListener`, `@OnEvent(OrderEvents.PAID)`) in `apps/api/src/orders/order-notifications.listener.ts`.
+- Reloads order by id with relations `['items', 'items.vendor', 'items.vendor.user', 'user']`.
+- Groups `order_items` by `vendorId` for per-vendor dispatch.
+- Vendor email override resolution via `VendorsService.resolveNotificationEmail` (override → account email → skip-with-warn on null).
+- New `MailService` methods: `sendVendorOrderNotification(to: string, vendor, items)` and `sendPlatformOrderNotification(to: string[], orderTotal, allItems)` and `sendCustomerOrderConfirmation(to: string, customer, allItems, orderTotal)`.
+- **Review fix:** Money formatting (unitPrice/total) was rendering raw JS numbers, dropping cents (pg `numeric(12,2)` string `"185.00"` → `"185"` after `Number()`). Fixed with `formatMoney()` helper (`.toFixed(2)`) applied at all five interpolation sites in `mail.service.ts`.
+- Hardened `notifyCustomer()` to skip-and-warn (not throw) if user relation is ever unloaded, matching vendor null-guard pattern.
+
+**TE-5 context (follow-up to TE-4 research, not in original TE-1/2/3/4 scope):**
+- TE-4's research surfaced that customers received zero email after paying (browser-only confirmation).
+- TE-5 was confirmed by Michael 2026-08-11 as a separate follow-up card rather than folded into TE-4.
+- Extended the same `OrderNotificationsListener` with `notifyCustomer()` — full line list + order total to `order.user.email` via new `MailService.sendCustomerOrderConfirmation`.
+- Closed the customer-confirmation gap that was noted in Open Question 1.
+
+**Test coverage:**
+- `apps/api/src/orders/order-notifications.listener.spec.ts`: event emitted exactly once on PAID (not PENDING/FAILED); per-vendor line isolation (no cross-vendor leakage, no totals in vendor payload); multi-vendor fan-out counts; platform-only order behavior; empty platform recipient list skip; vendor-with-no-email skip; missing-user-relation skip; bidirectional send independence (one send's failure never blocks another).
+- `apps/api/src/mail/mail.service.spec.ts`: explicit per-line currency (ZAR/NAD never converted); 2dp money formatting; all five interpolation sites verified for cents preservation.
+- **Results:** 51 suites / 693 tests pass; `npm run lint:api` clean; full monorepo `npm run build` clean.
+
+**Decisions & trade-offs:**
+- Best-effort, no-safety-net v1 accepted per `SearchIndexerService` precedent. No durable outbox/retry queue (noted in Open Question 2; could be added later).
+- Customer notification (TE-5) backfilled as follow-up rather than pre-planned, narrowing the original feature scope.
+- Money formatting: `.toFixed(2)` applied at render time, not at DB layer (audit preservation — stored value unchanged).
+
 ---
 
 ## Open questions (a human should answer before `/ship-card`)
