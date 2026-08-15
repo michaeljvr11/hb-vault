@@ -263,7 +263,10 @@ tidying if "All time" makes `to = now` load-bearing.
 
 ### Follow-ups
 
-- A composite `(status, createdAt)` index on `orders` would serve the actual earnings predicate (`status = 'delivered' AND createdAt BETWEEN`) better than the single-column index shipped here. Not a blocker; note it alongside the existing "push aggregation into SQL" follow-up for volume concerns.
+Both raised as v2 card options, not specced or queued for implementation — measure before picking either up.
+
+- **[EDR-2](https://trello.com/c/4SOXI65Z)** — a composite `(status, createdAt)` index on `orders` would serve the actual earnings predicate (`status = 'delivered' AND createdAt BETWEEN`) better than the single-column index shipped here. Not a blocker; measure the query plan against real volume first.
+- **[EDR-3](https://trello.com/c/D9yNimAK)** — push the earnings aggregation into SQL instead of `getMany()` + in-JS reduce (Open Questions Q2 above). Deliberately gated: this is a rewrite of well-tested money code, and should only be picked up once a real dataset shows the indexed scan isn't enough — not on suspicion.
 
 ## Related
 
