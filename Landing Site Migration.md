@@ -253,3 +253,27 @@ Order: LSM-1 first (assets + tokens unblock everything visual). LSM-2/3/4 are in
 each other. LSM-5 can run in parallel with LSM-4 (backend endpoint while the frontend seam is
 built) or right after. LSM-6 last — it links routes that LSM-2/3/4 create and needs the
 brand-name sweep to be unambiguous.
+
+
+## Implementation Notes (2026-08-15)
+
+**What shipped:** LSM-1/2/3 bundled as one branch (`feat/kdro0zYC-landing-site-migration`, five commits) because LSM-1's token swap and constants module are hard prerequisites for LSM-2/3's page logic, and LSM-2/3 both edit `app.routes.ts`/`app.routes.server.ts` (diverging branches would conflict for no isolation gain).
+
+**Assets & tokens (LSM-1):**
+- Five images copied to `apps/web/public/` (logo, hero, about, services, contact); hardcoded paths derived from hb-landing indirected through a new `SITE_IMAGES` constants module in `apps/web/src/app/shared/constants/` using absolute leading-slash paths (relative paths would resolve against the current route in an SSR app).
+- Token swap completed: `--hb-primary` `#015300` → `#2e7d32`, `--hb-secondary` `#964900` → `#f57c00`, mirrored in `DESIGN.md` and `styles.scss` in lockstep. Pill-button radius (`--hb-radius-pill`, `border-radius: 9999px`) applied to primary/CTA buttons only, not as a global `button` override (hb-landing's pattern, but scoped narrower here to avoid unintended cascade). `--hb-primary-container` set to `#43a047` (hand-picked, not Material-generated; at the original `#026e00` it was darker than the new `#2e7d32` primary, inverting its documented role as lighter/hover accents).
+- Token swap revealed a contrast regression: the new brighter orange and lighter green both fail AA as white-text fills. Two-round fix: (1) flipped 13 components' fills to `--hb-on-surface` text, and swapped `.checkout__submit` resting/hover states; (2) code review caught that `--hb-secondary` as a foreground colour sat at 2.70:1, then recomputed every ratio from actual hexes and found `--hb-on-secondary-container` (`#703500`, 9.55:1) was the documented fit. Documented `--hb-secondary` as fills/bars only to prevent recurrence.
+- **Key lesson:** colour-token swaps need contrast re-audited on both fills and foregrounds, separately, as two distinct passes.
+
+**Pages (LSM-2 & LSM-3):**
+- `/about` prerendered: ported "Our Story" / "Our Mission", rewrote "building toward a full trusted marketplace tomorrow" to present tense (launch-neutral copy per spec requirement).
+- `/services` prerendered: ported the three value blocks and 4-step process, **deleted the entire teaser section** and replaced it with a live `/shop` cross-link stating the dual-engine model explicitly (marketplace is primary, sourcing is a standing complementary service for unlisted items). Margin tiers are **not** published on `/services` (transparency promised, pricing withheld per spec rule 4).
+- `TrustBanner` component gained an optional `label` input so its `aria-label` can describe what it labels per page (reused across `/services` value blocks rather than adding a second 3-card grid).
+- Both pages carry explicit `RenderMode.Prerender` entries in `app.routes.server.ts` — this resolves [[Public Storefront & SSR]] open question 2 (confirmed these as the static marketing pages `Prerender` was reserved for).
+
+**Deferred out of scope:**
+- `/contact` (LSM-4) not built; both pages' `routerLink="/contact"` falls through catch-all to `/login` until it lands.
+- Nav/footer wiring and brand-name sweep to "H&B E-Commerce" are LSM-6; nav and footer still read "H&B Market".
+- **Asset weight unaddressed:** the copied images total ~6.4 MB (hb-logo.png alone 902 KB, 2000×2000 PNG rendered at 32×32 on every route). LSM-1's AC required only copying them; a follow-up card owns optimization (resize/re-encode, `NgOptimizedImage` evaluation). This undercuts the point of prerendering for a mobile-data audience.
+
+**Verification:** 837/837 Vitest specs pass; `npm run build` clean, prerendering both routes; both pages verified live against dev server with no console errors; all links wired except `/contact`.

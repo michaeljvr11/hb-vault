@@ -1,0 +1,8 @@
+# Session 32 — LSM-1/2/3: Landing site migration
+
+**Date:** 2026-08-15 · **Cards:** [LSM-1](https://trello.com/c/kdro0zYC) / [LSM-2](https://trello.com/c/xhYmG5j8) / [LSM-3](https://trello.com/c/ahPpaEIK) · **Branch:** `feat/kdro0zYC-landing-site-migration` · **Status:** Open PR
+
+- Shipped: Assets (5 images, logo, hero, about, services, contact) copied to `apps/web/public/` and indirected through new `SITE_IMAGES` constants module. Tokens swapped: `--hb-primary` `#015300` → `#2e7d32`, `--hb-secondary` `#964900` → `#f57c00` (mirrored in DESIGN.md + styles.scss); pill-button radius scoped to primary/CTA only; `--hb-primary-container` set to `#43a047`. Pages: `/about` prerendered (launch-neutral copy, "building toward marketplace tomorrow" → present tense), `/services` prerendered (teaser deleted, replaced with `/shop` cross-link + sourcing as standing service). Both have `RenderMode.Prerender` entries closing the SSR spec's open question 2.
+- Decisions: Token swap extended to ~38 hardcoded literals (old-green focus rings would otherwise mismatch new green fills); contrast regressed with new colours, required two-round fix (fill text swaps + `--hb-secondary` reclassified as fills-only, not foregrounds, after recomputing all ratios). Margin tiers withheld from `/services` (transparency promised, pricing kept internal). `--hb-primary-container` hand-picked to restore lighter-than-primary role.
+- Tests: 837/837 Vitest specs pass, npm run build clean, both pages prerendered and live-tested against dev server with no console errors.
+- Follow-ups: `/contact` (LSM-4), nav/footer wiring + brand-name sweep (LSM-6), image optimization (resize/re-encode, NgOptimizedImage evaluation) — deferred.

@@ -67,16 +67,18 @@ so no new DTO is required.
 - `isVerified` order gate � already its own blocked card; see [[Auth & Roles]].
 - New product-detail / vendor-profile route components � designs exist under `docs/design/`;
   this spec makes the route + API public and server-rendered so those screens drop in later.
-- Admin/vendor portal render modes � stay `RenderMode.Client`. Do not regress.
+- Admin/vendor portal render modes � stay `RenderMode.Cli1. **Public `GET /vendors/:id` – approved-only filter confirmed?** Does `VendorsService.findOne`
+   already filter to `approved`? If not, add it – or a direct id lookup leaks non-approved vendors.
+   ✓ **Resolved (slice 3, 2026-06-26):** approved-only filter added to `findOne` query; non-approved vendors return 404 matching `findDirectory` visibility.
 
-## Open questions (confirm before /ship-card)
-
-1. **Public `GET /vendors/:id` � approved-only filter confirmed?** Does `VendorsService.findOne`
-   already filter to `approved`? If not, add it � or a direct id lookup leaks non-approved vendors.
 2. **Prerender vs Server:** Recommendation is `RenderMode.Server` for `/shop` and data-driven
    pages (live data + SEO), `Prerender` reserved for future static marketing pages. Confirm.
+   ✓ **Resolved (LSM-2/LSM-3, 2026-08-15):** `/about` and `/services` are the static marketing pages; both now carry explicit `RenderMode.Prerender` entries in `app.routes.server.ts`.
+
 3. **Default post-login destination (no returnUrl):** keep `/shop`? Current behaviour is fine.
-4. **Nav auth-awareness scope:** minimum = sign-in/account toggle + anonymous cart ? login.
+
+4. **Nav auth-awareness scope:** minimum = sign-in/account toggle + anonymous cart → login.
+   Anything more (mini-cart, account dropdown) is cart-card territory.ogin.
    Anything more (mini-cart, account dropdown) is cart-card territory.
 
 ## Vertical slices ? Trello cards
