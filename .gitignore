@@ -1,0 +1,2 @@
+# Local Obsidian UI state (open tabs, pane layout) — churns every session, not vault content.
+.obsidian/workspace.json
