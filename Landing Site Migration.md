@@ -277,3 +277,44 @@ brand-name sweep to be unambiguous.
 - **Asset weight unaddressed:** the copied images total ~6.4 MB (hb-logo.png alone 902 KB, 2000×2000 PNG rendered at 32×32 on every route). LSM-1's AC required only copying them; a follow-up card owns optimization (resize/re-encode, `NgOptimizedImage` evaluation). This undercuts the point of prerendering for a mobile-data audience.
 
 **Verification:** 837/837 Vitest specs pass; `npm run build` clean, prerendering both routes; both pages verified live against dev server with no console errors; all links wired except `/contact`.
+
+
+## Implementation Notes (2026-08-16) — LSM-4/5/6
+
+**What shipped:** LSM-4/5/6 bundled on a single branch (`feat/Ah6EZCOW-contact-page-and-inquiries`, six commits) because LSM-4 depends on LSM-5's API contract and LSM-6 wires both. Lead sequenced the work: LSM-5 contract layer first (single owner, no race on `contracts/index.ts`), then LSM-4 (web) and LSM-5 (API) in **parallel** on disjoint file sets, then LSM-6 last (needs routes both teams created first).
+
+**LSM-5 — API contact endpoint (`POST /inquiries`):**
+- New `inquiries` module: `ContactInquiry` entity → `contact_inquiries` table + native Postgres enum `inquiry_order_type`, migration `1787011200000-ContactInquiries.ts`, `CreateContactInquiryDto` DTO implementing the shared contract, controller + service.
+- Route is `@Public()` (contact forms have no logged-in user) and throttled at 5/60s per IP — the same `EMAIL_THROTTLE` value auth uses, matching the risk shape (unauthenticated + outbound email).
+- Persist-first pattern: DB row is the durable record. `notifyPlatform()` wrapped in additional try/catch even though `MailService.send()` already swallows transport failures — the guard sits below recipient resolution, so a `PlatformSettingsService.get()` throw would otherwise turn a successfully-saved inquiry into a 500.
+- Recipients reuse `PlatformSettingsService.notificationEmails`; no new env var, no second mail path. `MailService` gained one method (`sendContactInquiryNotification`).
+
+**LSM-4 — `/contact` page:**
+- Ports hb-landing's page: copy, section structure, field set intact; mechanism replaced (EmailJS + three hardcoded keys → injectable `ContactService` posting to `POST /inquiries`; `ngModel` → typed reactive form; direct `MatSnackBar` → shared `NotificationService`).
+- Response SLA reads **"within 1 business day"** throughout; hb-landing's "within 24–48 hours" was deliberately not ported (contradicts `15-customer-support.md`'s "within 1 business day" promise).
+- Native `<select>`/`<checkbox>` not Material, because `mat-select` panel renders to `<body>` overlay and would need global theme tokens; consistent with the app staying theme-free.
+- Failure keeps user input + points to WhatsApp/email fallbacks; success resets. Submit is signal-guarded against double-posting. Prerendered like `/about` and `/services`.
+- New `site.constants.ts` carries the contact details and two `wa.me` deep links.
+
+**LSM-6 — nav/footer wiring + brand sweep:**
+- Footer dead `href="#"` links become real routes where pages now exist: Contact Support → `/contact`, Register as Vendor → `/vendor/apply` (already exists), plus new About Us and Services entries. Four links stay dead (Shipping Policy, Terms of Trade, Export Documentation, Success Stories) per the deliberate precedent from [[Storefront UI Cleanup Batch]].
+- Nav gains About / Services / Contact. Fixed a pre-existing bug: Home link carried `nav-bar__link--active` in static class list, rendering active on every route regardless of `routerLinkActive`.
+- Brand unified to **"H&B E-Commerce"** across nav, footer, auth screens, vendor/admin/profile shells, `index.html` `<title>`. `environment*.ts` `appName` already read the new name.
+- Two brand occurrences deliberately left unchanged: `/services`' "The H&B Marketplace" heading and spec assertion (the dual-engine framing depends on naming the marketplace engine explicitly).
+
+**Key lessons (cross-cutting):**
+- **Seams in bundled batches are where failures hide.** Three FAILs were client/server contract mismatches, not bugs within either layer: (1) web form had no length caps while API DTO capped every field; (2) Angular's `Validators.email` accepts `jane@localhost` while class-validator's `@IsEmail(require_tld)` rejects it; (3) empty/whitespace `name`/`message` passed the browser's `required` guard. All three would render as generic "something went wrong" toasts. **Validation parity across a contract boundary needs explicit checking — it does not fall out of shared types.**
+- **A `@Public()` write endpoint cannot trust browser guards.** DTO accepted empty + whitespace-only fields; fix: trim-then-`@IsNotEmpty` on both fields.
+- **Contrast, again (LSM-1 was the first).** WhatsApp green (`#25d366`) as a white-text background was 1.98:1, failing AA. Dark label on the same green is 8.6:1 and retains the recognizable colour. Brand colour sources (WhatsApp, hb-landing) often frame colours as fills/icons behind dark text, not as text backgrounds.
+
+**Deferred & gaps:**
+- Migration has not been executed against a live DB; form has not been POSTed end-to-end against a running API. SQL reviewed by reading, not by running.
+- Nothing reads `contact_inquiries` — no list endpoint, no admin screen. Durably saved but functionally invisible outside `psql`. Follow-up card needed.
+- Mobile nav still hides marketing-page links (pre-existing structural limit; Home was already hidden). First batch to put real destinations behind the hidden footer.
+- No `replyTo` on the ops notification, so ops must copy the address out of the body. Follow-up.
+
+**Closes from earlier deferred:**
+- LSM-1/2/3 deferred `/contact` (LSM-4) — now built.
+- LSM-1/2/3 deferred nav/footer wiring + brand sweep (LSM-6) — now done. **Both statements in the earlier Implementation Notes section ("nav/footer still read 'H&B Market'" and "`/contact` is not built") are now false** — a deliberate record of what LSM-1/2/3 shipped, not corrected in place.
+
+**Verification:** `npm run lint:api` clean; `npm run test:api` 52 suites / **712** tests; `npm run test -w @hb/web` **862/862**; `npm run build` clean, prerendering 3 static routes (`/about`, `/services`, `/contact`). Driven live against dev server: form validation blocks empty submit with four inline errors, `maxlength` attributes match API caps exactly, nav shows only current route as active, footer links resolve, no old brand strings survive in the DOM.
