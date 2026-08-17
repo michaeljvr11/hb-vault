@@ -27,6 +27,60 @@ pending → confirmed → processing → handed_to_hb → shipped → delivered
 may only move `confirmed → processing` and `processing → handed_to_hb`. They cannot
 read/act on other vendors' lines or any platform-fulfilled lines.
 
+
+## Admin override (confirmed 2026-08-16)
+
+The transition table above governs the *normal* pipeline — vendor/customer/automatic
+(payment) writes, all going through `ORDER_STATUS_TRANSITIONS`. Admin gets a second,
+separate write path: an **unrestricted override** that can set an order to any
+`OrderStatus` from any current status — backward, sideways, skipping stages, or leaving
+a terminal state (`delivered`, `cancelled`). Rationale: orders can be falsely advanced
+(wrong button, bad scan, vendor error) and admin needs a real correction path, not just
+forward progression.
+
+**Not the same code path as `ORDER_STATUS_TRANSITIONS`.** The override bypasses that
+matrix entirely rather than extending it with reverse edges — the matrix expresses the
+normal, happens-once forward flow; folding an emergency-correction case into the same
+validation blurs a guarantee (`orders.service.ts`'s "single gateway" comment) that other
+code currently relies on.
+
+**Guardrails:**
+- Admin-only (`@Roles(UserRole.ADMIN)`) — never exposed to vendor or customer.
+- A **reason is required** on every override call (non-empty string, validated) — no
+  reason, no write.
+- Every override writes an **audit row** separate from normal order history: admin user
+  id, order id, from-status, to-status, reason, timestamp. Additive audit data, not a
+  replacement for anything existing.
+- **Known risk, not solved here:** normal-pipeline side effects (e.g. the `order.paid`
+  listener firing notification emails on `pending → confirmed`) can re-fire if an
+  override re-enters that status. Whether override writes should suppress domain-event
+  emission is an implementation decision, not resolved in this note — flag it for
+  whoever picks up the card.
+
+**Open implementation question:** a separate endpoint (e.g. `PATCH
+/orders/:id/status-override`) vs. an unrestricted branch on the existing `PATCH
+/orders/:id/status`. Recommend a **separate endpoint** — keeps the existing one's
+"single validated gateway" guarantee intact for every other caller. Confirm before
+implementation.
+
+Tracked as Trello cards (API + admin UI) — see [[Product Reviews & Ratings]] for the
+review-eligibility context that surfaced this gap.
+
+
+**Notification-suppression question — resolved 2026-08-16.** The override UI exposes a
+checkbox next to the required reason field: **"Send notification emails for this
+change"**. Admin decides per-override, not a fixed policy. Default **unchecked** (no
+notifications) — an override is typically a correction, not a real business event, and
+silently emailing a customer "your order is confirmed!" because admin was fixing a
+data-entry mistake would be worse than staying quiet. Admin opts in when the change is
+a genuine status update that happens to be going through the override path (e.g.
+legitimately marking `delivered` while the dedicated UI gap still exists).
+
+Contract: `OrderStatusOverrideRequest` gains `sendNotifications: boolean` (required
+field, no server-side default — the checkbox state is always sent explicitly). The
+override write conditionally emits the normal domain event (`OrderEvents.PAID` etc.)
+only when `sendNotifications` is true; the audit row records the override regardless.
+
 ## Coupled state machines
 
 One order may have multiple shipments (mixed platform/vendor lines — see [[Listing Types & Vendor Rules]]). Order status aggregates over its shipments:
@@ -91,3 +145,26 @@ Shipped via [PR (pending push)](https://github.com/michaeljvr11/hb-mono-repo), b
 **Tests/review outcome:** api 26 suites / 347 tests · web 43 files / 471 tests · lint clean · SSR build clean (no new warnings). Code review: **SHIP**, zero FAIL items. One non-blocking nit (not addressed, low priority): currency-symbol display in the vendor-orders HTML uses binary ZAR/NAD ternary rather than a full `CurrencyCode` map — acceptable for v1 (two-currency platform only), flagged as a follow-up if a third currency is ever added.
 
 **Follow-ups:** the vendor-portal vertical slice (slice 4 in [[Vendor & Admin Portals]] — "Vendor orders & fulfilment") is now functionally complete for v1 (list + transitions). Currency-symbol ternary → full map if multi-currency support lands.
+
+### Admin order-status override (emergency correction path) — 2026-08-17 (cards 5Ygendw9 / m0t7PTgP, branch `feat/5Ygendw9-admin-order-status-override`)
+
+Full-stack API + web UI for admin-only, unrestricted order-status correction. Rationale: orders can be falsely advanced (wrong button, bad scan, vendor error) and admin needs an emergency-correction path outside the normal `ORDER_STATUS_TRANSITIONS` matrix.
+
+**What shipped:**
+- **`@hb/shared` contracts** (`libs/shared/src/contracts/order.ts`): new `OrderStatusOverrideRequest { status: OrderStatus; reason: string; sendNotifications: boolean }` and `OrderStatusOverrideAuditDto { id, orderId, adminUserId, adminEmail?, fromStatus, toStatus, reason, sendNotifications, createdAt }`.
+- **API** (`apps/api/src/orders/`): new admin-only endpoints `PATCH /orders/:id/status-override` and `GET /orders/:id/status-overrides` (both `@Roles(UserRole.ADMIN)`). New `OrdersService.overrideStatus()` method deliberately bypasses `ORDER_STATUS_TRANSITIONS` — any status to any status, including terminal-state entry/exit. Rejects a no-op override (`dto.status === order.status`) with 409 before any write. Wraps the status save + conditional `deliveredAt` stamp (reusing atomic `UPDATE ... WHERE deliveredAt IS NULL` pattern) + audit-row insert in one DB transaction. Emits `OrderEvents.PAID` only when `sendNotifications === true` AND target status is `CONFIRMED` (the only domain event that exists today for any order status); no notification for other target statuses. Audit row written unconditionally on every successful override. New `order_status_overrides` table (migration `1787097600000-OrderStatusOverrides.ts`, FKs to `orders.id`/`users.id` `ON DELETE RESTRICT`) — separate from the generic `audit_logs` table. `findOverridesForOrder()` 404s on unknown order, joins `users` to populate `adminEmail` on each row.
+- **Web** (`apps/web/src/app/features/admin/pages/admin-orders/`): new override control on the existing split list/detail admin-orders panel — any-status select (all `OrderStatus` values, not just forward-reachable), required reason textarea (no-op/whitespace rejected, max-length matching DB varchar(2000)), "Send notification emails for this change" checkbox (default unchecked), inline two-step confirmation (copy branches on checkbox state). Audit history list renders prior overrides (who/when/from→to/reason/notifications sent) for the selected order. New calls added to `OrdersService` (not `AdminOrdersService`; endpoints live on `OrdersController`).
+
+**Key decisions:**
+- **Separate endpoint** (`PATCH /orders/:id/status-override` vs. extending `/status`): preserves the existing "single validated gateway" guarantee for the normal pipeline. The override path is deliberately unrestricted (no `ORDER_STATUS_TRANSITIONS` check).
+- **`OrderEvents.PAID` scoping**: notification emission on override scoped to the one event that already exists (fired only for `CONFIRMED` target). Overriding into any other status with notifications checked currently sends no email — no listener wired for those transitions yet. Marked as a follow-up if admin needs notification coverage for other override targets later.
+- **No-op-override rejection**: 409 before any write/audit/event — discovered during code review, prevents silent re-fire of `CONFIRMED` notification fan-out on a "just add a reason and confirm" click when form defaults to current status.
+- **Dedicated `order_status_overrides` table**, not generic `audit_logs` — every row always references exactly one order and one admin, so proper FKs (`ON DELETE RESTRICT`) made sense here in a way they don't for the polymorphic `audit_logs` table.
+- **`adminEmail` populated via query-time join**, not denormalized column — kept migration/entity minimal.
+- **Bundled as one PR, not two**: API and web cards shared the `OrderStatusOverrideRequest`/`OrderStatusOverrideAuditDto` contract one-for-one and the web card depended on the API card; mirrors PR #26/#27/#28 precedent.
+
+**Review process:** Two rounds of real findings (non-fatal bugs in first pass): weak reason validation (whitespace-only accepted, no max-length vs varchar(2000) column), three non-atomic writes (status/deliveredAt/audit — now wrapped in transaction), no-op-override notification re-fire (now rejected with 409), missing tests for `@Roles(ADMIN)` gate and DTO validation, stale-response race in web detail panel (switching selected order mid-flight could render one order's audit history under another, or leave double-submit lock stuck). All fixed and re-reviewed; a third final pass caught one residual regression in the race-condition fix itself (stale-response guard released double-submit lock too late on the stale branch, permanently soft-locking Confirm after mid-flight order switch) — fixed and verified. Final verdict: **SHIP**.
+
+**Tests:** API 54 suites / 741 tests (lint clean). Web 69 files / 880 tests. Full `npm run build` clean (pre-existing non-fatal SCSS budget warnings on 2 unrelated files; `admin-orders.scss` now also trips the same warning by ~2.7kB over budget — flagged as follow-up). Migration `OrderStatusOverrides1787097600000` verified up/down/up against live dev Postgres.
+
+**Follow-ups:** SCSS budget extraction (admin pages sharing `.action-bar`/`.action-btn`/spinner CSS blocks); notification coverage for other override targets (future card if needed).
