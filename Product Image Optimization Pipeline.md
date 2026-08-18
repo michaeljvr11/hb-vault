@@ -409,3 +409,167 @@ the definitions above, via the Trello REST fallback (see the card links in the s
 above). Verified against the board first: no existing card in To Do/In Progress/In Review
 covers this work, so nothing here duplicates in-flight effort. Ready for `/ship-card
 PIO-1`.
+
+
+## Decisions locked — 2026-08-18 (`/ship-batch` PIO-1…PIO-5)
+
+Developer sign-off obtained at the CLARIFY gate of the bundled build. These close the
+remaining open questions; the proposals above are now **decisions**.
+
+- **OQ2 — output format: WebP only.** No JPEG fallback. Rationale: WebP is universal
+  from ~2020 and this is an authenticated marketplace, not the public landing page that
+  drove the `a2e7242` fallback. Halves storage and per-upload encode cost. PIO-3 therefore
+  renders a plain `<img srcset>`, **not** `<picture>` + `<source type="image/webp">`.
+  PIO-4 inherits this for vendor branding assets (consistency requirement in its ACs).
+- **OQ2 — caps/derivatives: the proposed table stands unchanged.** Reject above
+  8000 × 8000 (422); `full` ≤ 2000 px longest edge / ≤ 500 KB; `card` 800 px / ≤ 200 KB;
+  `thumbnail` 300 px / < 100 KB. Aspect ratio preserved, never cropped, never upscaled,
+  EXIF auto-oriented then stripped.
+- **PIO-2 storage mode: `memoryStorage` + magic-number validation.** Chosen over
+  `diskStorage`. The raw original never touches disk; validation stops trusting the
+  client-supplied `mimetype` and reads the actual file signature. Accepted cost: up to
+  8 × 5 MB ≈ 40 MB peak heap per `POST /products`. The `fallbackToMimetype: true`
+  behaviour must still be covered by a test so the VPC-2 lesson cannot silently regress.
+- **OQ3 — synchronous processing** (spec recommendation taken). No queue introduced.
+- **OQ4 — no backfill** of existing stored images (spec recommendation taken). Legacy
+  rows keep `variants` null and every consumer falls back to `url`.
+- **OQ5 — 5 MB per-file cap unchanged** (spec recommendation taken), on both the product
+  and vendor upload paths.
+
+**Bundling:** PIO-1…PIO-5 ship as one branch and one PR
+(`feat/8AQq2C3E-product-image-optimization`) — owner-approved exception to
+one-card-one-branch, same precedent as PRs #26/#27/#28. They are a strict dependency
+chain over one shared `@hb/shared` contract surface, so splitting them creates
+integration seams rather than removing them. Executed **sequentially**, one commit per
+slice.
+
+
+## PIO-4 design output — 2026-08-18 (docs-only slice, no production code)
+
+### Delta between the two upload paths, re-diffed after PIO-2
+
+PIO-2 moved the products path to `memoryStorage`, so the two configs are no longer
+near-identical — the delta is now substantive, not cosmetic:
+
+| | `products/upload/multer.config.ts` (post-PIO-2) | `vendors/upload/vendor-image.multer.config.ts` (today) |
+|---|---|---|
+| Storage | `memoryStorage()` — raw original never hits disk | `diskStorage({ destination: './uploads/vendors' })` |
+| Filename | Written later as `<uuid>-<preset>.webp` by `ImageVariantWriterService` | `<uuid><ext>` from the local `MIME_EXTENSIONS` map |
+| `MIME_EXTENSIONS` map | Deleted — output format is always WebP now | Still present and still load-bearing |
+| Interceptor | `FilesInterceptor('images', 8, …)` | `FileInterceptor('file', …)` — single file |
+| Validation pipe | `productImageFilePipe` + `productImageDimensionsPipe` | `vendorImageFilePipe` only — no dimension probe |
+| 5 MB cap + mimetype `fileFilter` | Identical | Identical |
+
+Endpoints: `POST /vendors/me/logo` and `POST /vendors/me/banner`, both `@Roles(VENDOR)`,
+both landing in `VendorsService.updateBrandingImage(userId, 'logoUrl' \| 'bannerUrl', file)`,
+which sets `vendor[field] = fileUrlService.getFileUrl(file.filename, 'vendors')`. The vendor
+is resolved from `userId` off the auth token — owner-scoped, nothing client-supplied. PIO-5
+keeps that shape and only changes what gets written and what gets recorded.
+
+`vendorImageFilePipe` already carries `fallbackToMimetype: true` with a regression spec; it
+is the precedent PIO-1 copied. Once PIO-5 moves this path to `memoryStorage`, `file.buffer`
+is populated and magic-number validation becomes the real check — the fallback spec must be
+reworked the same way PIO-2 reworked the products one, not deleted.
+
+### Derivative presets — decided from measured render sizes, not from the proposal
+
+The card proposed logo ~512 px and banner 640/960/1280/1536. Measured against
+`apps/web/src/app/features/vendors/vendor-profile/vendor-profile.scss`:
+
+- `.vendor-profile__logo` — `64px` square, `72px` at `min-width: 768px`, `border-radius: 50%`,
+  `object-fit: cover`.
+- `.vendor-profile__banner` — `width: 100%`, `aspect-ratio: 21 / 9`, `object-fit: cover`,
+  inside the same max-width container as the PDP.
+
+**Decided presets:**
+
+| Asset | Preset | Longest edge | Target bytes | Why |
+|---|---|---|---|---|
+| Logo | `thumbnail` | 144 px | < 20 KB | 72 CSS px at 2× — the actual rendered size |
+| Logo | `full` | 512 px | ≤ 80 KB | Canonical `logoUrl`; headroom for 3× and for future larger placements |
+| Banner | `card` | 640 px | ≤ 120 KB | 1× mobile/tablet |
+| Banner | `full` | 1280 px | ≤ 350 KB | Container cap; also covers 375 px × 3 DPR = 1125 px |
+
+The proposed 960 and 1536 banner tiers are **dropped**. 960 sits between two tiers that
+already bracket every real viewport, and 1536 exceeds the 1280 px container — neither earns
+its bytes for a metered-data audience. The `a2e7242` LSM breakpoints that suggested them
+were for a full-bleed marketing hero with no container cap, which is not this.
+
+**Transparency needs no special handling.** WebP supports an alpha channel and sharp
+preserves it by default, so the existing `ImageProcessorService` already satisfies "logo
+must preserve transparency" with no change. No PNG-passthrough branch is required.
+
+**No cropping for either asset**, same as products — `object-fit: cover` in CSS already does
+the visual cropping at render time, and baking a crop into storage would destroy pixels no
+one decided to lose. `fit: 'inside'` stands.
+
+**WebP-only for vendor branding**, consistent with the OQ2 decision for product images.
+
+### Contract shape — revised from the proposal
+
+The proposal was eight new flat fields on `VendorDto` (`logoWidth`/`logoHeight`/
+`logoSizeBytes`/`logoVariants` × logo and banner). **Revised**, for two reasons:
+
+1. Eight flat fields spell the same structure out twice and make `VendorDto` hard to read.
+2. `VendorImageVariantDto` as proposed is structurally identical to the already-shipped
+   `ProductImageVariantDto`. Two identical interfaces is exactly the DTO duplication the
+   root `CLAUDE.md` forbids.
+
+**Decided shape.** Promote the variant types to a shared module and nest the per-asset
+metadata:
+
+```ts
+// libs/shared/src/contracts/image.ts (new)
+export interface ImageVariantDto { url: string; width: number; height: number; sizeBytes: number; }
+export interface ImageVariantSet {
+  thumbnail?: ImageVariantDto;
+  card?: ImageVariantDto;
+  full?: ImageVariantDto;
+}
+/** Metadata for one uploaded image whose canonical URL lives on the owning DTO. */
+export interface UploadedImageDto {
+  width: number;
+  height: number;
+  sizeBytes: number;
+  variants: ImageVariantSet;
+}
+
+// libs/shared/src/contracts/vendor.ts — additive, all optional
+export interface VendorDto {
+  // ...existing fields unchanged...
+  logoUrl?: string;    // unchanged, still the canonical URL
+  logo?: UploadedImageDto;
+  bannerUrl?: string;  // unchanged, still the canonical URL
+  banner?: UploadedImageDto;
+}
+```
+
+`ProductImageVariantDto`/`ProductImageVariantSet` (shipped in PIO-2) become re-exported
+aliases of `ImageVariantDto`/`ImageVariantSet` so the product contract keeps its familiar
+names without a second definition. Nothing outside this PR consumes them yet, so this costs
+no migration.
+
+The banner set uses only `card` and `full`; the logo set only `thumbnail` and `full`. Every
+member of `ImageVariantSet` is optional precisely so a preset set can use a subset — which
+is already true for products, where `ImageProcessorService` skips a preset that would
+duplicate a larger one on a small source.
+
+### Web helper generalization
+
+`buildResponsiveImage(image: ProductImageDto)` in
+`apps/web/src/app/shared/responsive-image.ts` (PIO-3) is product-typed but its body only
+reads `url`, `width`, `height`, `variants`. PIO-5 widens the parameter to a structural type
+covering both product images and vendor branding rather than writing a second helper.
+
+### Adjustments to PIO-5's acceptance criteria
+
+- The `VendorDto` AC changes from "gains `logoWidth`/`logoHeight`/`logoSizeBytes`/
+  `logoVariants`, `bannerWidth`/…" to "gains optional `logo?: UploadedImageDto` and
+  `banner?: UploadedImageDto`, with `logoUrl`/`bannerUrl` unchanged", plus the new shared
+  `libs/shared/src/contracts/image.ts` module.
+- New AC: the vendor upload path moves to `memoryStorage` and `vendorImageFilePipe`'s
+  `fallbackToMimetype` spec is reworked (not deleted) to document the buffer-present path.
+- New AC: `buildResponsiveImage` is widened rather than duplicated.
+- The migration AC stands but the columns follow the nested shape: nullable
+  `logoWidth`/`logoHeight`/`logoSizeBytes` + `logoVariants` jsonb, same for banner — the
+  entity stays flat; the nesting is a DTO-shape decision, not a schema one.
