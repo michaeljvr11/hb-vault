@@ -1,6 +1,6 @@
 # Product Image Optimization Pipeline
 
-**Status:** Spec — not yet sliced onto the board (see "Handoff gap" at the bottom).
+**Status:** In review — PIO-1…PIO-5 implemented and bundled into [PR #59](https://github.com/michaeljvr11/hb-mono-repo/pull/59), opened 2026-08-18. **Not merged; a human owns that call.**
 **Date:** 2026-08-16
 **Related:** [[HB Domain Model]] · [[Vendor & Admin Portals]] · [[Vendor Profile Customization]] · [[Landing Site Migration]] · [[Public Storefront & SSR]] · [[Product Search Engine]] · [[Listing Types & Vendor Rules]] · [[Auth & Roles]]
 
@@ -159,7 +159,7 @@ export interface ProductImageVariantDto {
 
 export interface ProductImageDto {
   id: string;
-  url: string;              // unchanged — the canonical/"full" URL, always present
+  url: string;              // unchanged — the canonical/\"full\" URL, always present
   isPrimary: boolean;
   displayOrder: number;
   altText?: string;
@@ -544,15 +544,11 @@ export interface VendorDto {
 }
 ```
 
-`ProductImageVariantDto`/`ProductImageVariantSet` (shipped in PIO-2) become re-exported
-aliases of `ImageVariantDto`/`ImageVariantSet` so the product contract keeps its familiar
-names without a second definition. Nothing outside this PR consumes them yet, so this costs
-no migration.
-
-The banner set uses only `card` and `full`; the logo set only `thumbnail` and `full`. Every
-member of `ImageVariantSet` is optional precisely so a preset set can use a subset — which
-is already true for products, where `ImageProcessorService` skips a preset that would
-duplicate a larger one on a small source.
+**Execution divergence:** `ProductImageVariantDto` and `ProductImageVariantSet` were
+introduced in PIO-2 but exist only on this branch (never on `main` before), so the plan to
+keep them as familiar re-exported aliases was dropped and they were deleted outright. All
+four use sites (`ProductImageDto`, `ProductToResponseDto` mapper, and two web components)
+import `ImageVariantDto`/`ImageVariantSet` directly from the shared `image.ts` module.
 
 ### Web helper generalization
 
@@ -573,3 +569,42 @@ covering both product images and vendor branding rather than writing a second he
 - The migration AC stands but the columns follow the nested shape: nullable
   `logoWidth`/`logoHeight`/`logoSizeBytes` + `logoVariants` jsonb, same for banner — the
   entity stays flat; the nesting is a DTO-shape decision, not a schema one.
+
+## Implementation Notes — 2026-08-18 (PIO-1…PIO-5 implemented)
+
+**Status:** In review, **not merged**. Branch: `feat/8AQq2C3E-product-image-optimization` · [PR #59](https://github.com/michaeljvr11/hb-mono-repo/pull/59), open. Merging to `main` is a human-only action.
+
+**Shipped (six commits, 65+ files):**
+
+PIO-1 (`57d8397`): Added `sharp` dependency to `apps/api`; `ProductImageDto` gained optional `width`/`height`/`sizeBytes` fields on the contract; TypeORM migration `1787184000000-ProductImageDimensions` added matching nullable int columns; validation moved out of controller inline logic into composed pipes (`product-image-file.pipe.ts`, `product-image-dimensions.pipe.ts`). Uploads above 8000×8000 px are rejected with 422. Incidental fix: products path was missing `fallbackToMimetype: true` (already present on vendor path) — this prevented real disk-stored uploads from passing magic-number validation; now rectified.
+
+PIO-2 (`e39c83a`): Introduced `apps/api/src/common/image-processing/` module: `ImageProcessorService.process(buffer, presets)` (pure buffer transform, preset set is a parameter) and `ImageVariantWriterService.write()` (disk IO, kept separate). Products path switched from `diskStorage` to `memoryStorage`, so raw original never touches disk and real magic-number validation can run. `ProductImage` gained nullable `variants` jsonb column (migration `1787270400000-ProductImageVariants`). `key` became the uuid stem shared by all derivatives rather than a single filename, so it remains usable as the deletion handle it is documented to be. **Execution divergence #1:** No upscaling is performed, so two presets whose caps both exceed a small source yield byte-identical output; processor now emits only the first (e.g., a 400px upload yields `full` + `thumbnail`, skipping `card`). This made every variant genuinely optional, shaping PIO-3 and PIO-5.
+
+PIO-3 (`125daa5`): Implemented `buildResponsiveImage()` helper in `apps/web/src/app/shared/responsive-image.ts`, SSR-safe and shared by product card and PDP hero. Handles both absent `variants` (legacy rows) and partial variant sets. `width`/`height` bound from flat contract fields (describing the `full` derivative `url` points at). Grid cards retain `loading="lazy"`; PDP hero is eager with `fetchpriority="high"` (LCP element). `sizes` attribute derived from measured layout: 260/280 px grid, 160 px carousel, 1280 px container-capped hero.
+
+PIO-4: Design only — no production code. Output already recorded in spec note's "PIO-4 design output" section, finalized 2026-08-18.
+
+PIO-5 (`e83e098` + `cbd2c2e`): Wired vendor logo and banner uploads through the same `ImageProcessorService` with preset sets matching PIO-4's design (logo 144/512 px, banner 640/1280 px). New shared `libs/shared/src/contracts/image.ts` (`ImageVariantDto`, `ImageVariantSet`, `UploadedImageDto`); `VendorDto` gained optional nested `logo`/`banner` properties. Migration `1787356800000-VendorImageVariants`. Vendor path also moved to `memoryStorage` and gained decompression-bomb guard (extracted and shared, not copied). Web: `buildResponsiveImage` widened to structural parameter type for reuse; public vendor profile renders both assets responsively with fallback to flat `logoUrl`/`bannerUrl` for pre-shipped vendors. `width`/`height` deliberately not bound on vendor branding (both `object-fit: cover` with CSS-fixed boxes).
+
+Review pass (`1103fa5`): Three blocking findings fixed. (1) Products path cleanup only wrapped image processing; failures afterward (e.g. invalid `categoryId`) or during attachment left derivatives orphaned on disk with committed product row, no audit log, no event. Compensation now spans processing → creation → attachment. (2) Vendor path had no compensation. (3) Test named for cleanup was asserting call count and would pass if catch block deleted. Also addressed: quality pipeline rebuilt sharp per step (15+ passes per image on sync request); now resizes once to raw intermediate, requiring channel-count tracking for logo transparency — covered by new test.
+
+**Decisions held and recorded (OQ2-5 resolved per spec):**
+- WebP-only output (no JPEG fallback).
+- Dimension caps: 8000 px reject, 2000 px downscale, derivatives at 2000/800/300 px longest edges.
+- Synchronous processing; no queue.
+- No backfill of legacy images.
+- 5 MB per-file cap unchanged.
+
+**Divergences from recorded design:**
+1. Alias plan dropped (PIO-4 proposed `ProductImageVariantDto`/`ProductImageVariantSet` as re-exported aliases of shared types; implementation deleted them outright since they were branch-new and never on `main`). All four use sites now import `ImageVariantDto`/`ImageVariantSet` directly.
+2. Probed-dimensions payload removed from pipes (originally attached `dimensions` property to each file; nothing read it, both services take dimensions from processor output; pipes now are pure guards).
+
+**Known gaps (pre-existing or explicitly out of scope, recorded honestly):**
+- Nest's magic-number validation (`file-type` ESM-only package) fails under ts-jest; `fallbackToMimetype: true` retained with regression spec, but magic-number path not exercised by test. Production unaffected. Follow-up filed.
+- No orphan-file cleanup when image replaced or product deleted (pre-existing, explicitly out of scope).
+- PIO-3's AC mentioned PDP "filmstrip/alternate thumbs" not present in current markup/design; gallery is prev/next chevrons + badge. No strip invented; AC ≠ product.
+- OQ4 decision: no backfill of images uploaded before this PR; legacy images keep serving unoptimised original forever.
+
+**Test pass:** API 786/786 tests, 61 suites · Web 893 tests, 70 files · lint clean · `npm run build` (shared → api → web) succeeds.
+
+**Evidence figures (compiled from `npm run evidence`):** 241 commits (2026-06-11 → 2026-08-18) · 230 carry AI-authorship trailer (95%) · +96,283 / −10,273 lines across 763 files · 131 test specs (API 61 · Web 70) · guardrails: 23 prod-fence blocks · 35 green PR gates · 247 lint issues fed back.
