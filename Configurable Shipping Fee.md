@@ -30,7 +30,9 @@ but implementation must not start until Q1 is answered by a human.
 
 In scope: one global flat shipping fee per currency, admin-configurable via an
 effective-dated history; applied at order creation; surfaced as a distinct line item
-at checkout and on the order; frozen onto the order as charged.
+at checkout and on the order; frozen onto the order as charged. **Also in scope
+(added 2026-08-23):** an optional per-product shipping-fee override, admin-settable,
+that beats the global default for that product. See "Per-product override" below.
 
 ## Business rules it must honour
 
@@ -110,6 +112,60 @@ Rounding: none needed. The fee is a configured 2dp amount added whole; it is nev
 multiplied or apportioned. Order math stays in integer cents, matching
 `OrdersService.create`'s existing `subtotalCents` handling.
 
+## Per-product shipping fee override (added 2026-08-23)
+
+**Use case:** HB pre-positions bulk stock of certain fast-moving products in Namibia
+ahead of demand. The marginal shipping cost for a unit sold from that pre-positioned
+stock is lower than the standard cross-border cost, so the admin needs to set a
+cheaper (or, symmetrically, pricier) fee for specific products that beats the global
+default.
+
+**Design: mutable, not effective-dated history — deliberately unlike the global
+default.** The global fee needed an append-only history because it is a single
+platform-wide value where *when* a change took effect matters for every order placed
+platform-wide. A per-product override is a narrow, local exception on one product,
+the same shape of value as `products.price` — which is already a plain mutable
+column, edited via `PATCH /products/:id`, with no history table. Mirroring
+`price`'s precedent is more consistent than mirroring `commission_rates` here. As
+with `price`, the value actually charged is frozen onto the order at creation time
+(`orders.shippingTotal`), so historical order integrity does not depend on the
+override itself being historical.
+
+**Data model:** new `product_shipping_fee_overrides` table — `id` uuid PK,
+`productId` uuid FK → `products.id` (`ON DELETE CASCADE`), `currency currency_code`,
+`amount numeric(12,2)`, `updatedAt timestamptz`, `updatedByUserId` uuid nullable.
+UNIQUE (`productId`, `currency`). **Unlike the global default, an override does not
+need to cover every currency** — the admin may set an override for just NAD (the
+Namibia pre-positioned-stock case) and leave ZAR unset, in which case ZAR falls back
+to the global default. Admin-only upsert (set/replace the amount for one currency) and
+delete (clear the override, reverting that currency to the global default); no
+separate "history" list — the current row is the value, same as `price`.
+
+**Resolution algorithm, run once per order at creation (extends SF-3):** for each
+`order_item`, resolve that line's fee as `override[product, order.currency] ??
+ShippingFeeService.getFeeAt(orderCreatedAt, order.currency)`. Then
+`orders.shippingTotal = MAX(...)` over every line's resolved fee — **decided
+2026-08-23: the highest applicable fee across the cart wins**, not a sum and not an
+average. Example given: a cart with one item overridden to R50 and one item at the
+R250 default charges R250 total; a cart with one item overridden to R400 and one at
+the R250 default charges R400 total. This keeps shipping a single order-level
+amount — `orders.shippingTotal` needs no schema change, and no per-line-item
+shipping charge is introduced (`order_items` is untouched). Still resolve strictly
+against `order.currency`; never mix an override configured in one currency into an
+order placed in the other.
+
+**Admin UI requirement:** `admin-catalog`'s product tab **explicitly excludes vendor
+listings today** — "Only platform listings — vendor listings are never shown here"
+(`admin-catalog.ts:41`, by design, since vendors own editing their own listings). This
+feature needs a **new, read-only "Vendor Products" tab** alongside the existing
+Products/Categories tabs: lists vendor-listed products (the existing `GET /products`
+endpoint already returns both listing types and already accepts `vendorId`; it has no
+`listingType` filter yet, so the tab likely wants one added, or can filter
+client-side the same way `platformProducts` does today, inverted). The admin can view
+each vendor product (name, vendor, price, current effective shipping fee) and open a
+small control to set/clear its override per currency — not the full create/edit
+product form, since the admin does not own vendor product content.
+
 ## @hb/shared contract impact
 
 New `libs/shared/src/contracts/shipping-fee.ts` (interfaces + enums only; reuse
@@ -127,13 +183,30 @@ New `libs/shared/src/contracts/shipping-fee.ts` (interfaces + enums only; reuse
 - **`CurrentShippingFeeDto`** — `{ amount, currency }`. Read model for the checkout
   preview, so the UI can display the fee before the order exists.
 - **`OrderDto.shippingTotal`** — unchanged; its doc-comment should stop implying zero.
+- **`ProductShippingFeeOverrideDto`** (added 2026-08-23) — `productId`, `currency`,
+  `amount`, `updatedAt`, `updatedByUserId?`.
+- **`SetProductShippingFeeOverrideRequest`** — `currency: CurrencyCode`,
+  `amount: number` (non-negative, ≤2dp, same validation as the global fee).
+- **`ProductDto`** gains an optional `shippingFeeOverrides?: ProductShippingFeeOverrideDto[]`
+  (empty/absent ⇒ product uses the global default in every currency) so the admin
+  vendor-products tab can render current overrides without a second round-trip.
 
 Every endpoint input is a class-validator DTO implementing the shared interface.
 
 ## Out of scope (recorded so nobody assumes them)
 
 - **Any variable fee** — per weight, per volumetric size, per vendor, per region,
-  per distance, per shipment. v1 ships one global flat fee per currency (Q4).
+  per distance, per shipment. v1 ships one global flat fee per currency (Q4), plus
+  the per-product override above — nothing finer-grained (no per-shipment, no
+  quantity-scaled override).
+- **Per-line-item shipping charges.** The override changes which single fee wins for
+  the whole order (highest applicable, decided 2026-08-23); it does not make shipping
+  a per-item charge or add a fee to `order_items`. One order still shows one shipping
+  line.
+- **Vendor-initiated overrides.** Only the admin can set a product's override, even on
+  a vendor-owned listing — this is an admin pricing lever, not a vendor one.
+- **Full admin edit rights over vendor product content** via the new Vendor Products
+  tab. That tab is read-only except for the shipping-fee-override control.
 - **Free-shipping thresholds, promo codes, discounts.** No vendor-run promotions exist
   at Phase 1 launch ([[HB Domain Model]] pricing resolution).
 - **Priority/expedited delivery flat fee** — listed as TBD upstream in
