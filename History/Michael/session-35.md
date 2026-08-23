@@ -1,0 +1,9 @@
+# Session 35 — 4loUsIJ7/3pAC43jY/XJjlnz9y/saPh1Fmu: Product reviews & ratings
+
+**Date:** 2026-08-23 · **Cards:** [4loUsIJ7](https://trello.com/c/4loUsIJ7) / [3pAC43jY](https://trello.com/c/3pAC43jY) / [XJjlnz9y](https://trello.com/c/XJjlnz9y) / [saPh1Fmu](https://trello.com/c/saPh1Fmu) · **Branch:** `feat/4loUsIJ7-review-contracts-read-api` · **Status:** Open
+
+- Shipped: PR-1 review contracts + `product_reviews` migration + public read API (`GET /products/:productId/reviews` @Public, SQL-aggregated summary, derived authorName, no PII). PR-2 verified-purchase eligibility gate (EXISTS join over order_items/orders, DELIVERED required) + `POST /reviews` (authenticated, duplicate → 409, vendor self-review blocked). PR-3 PDP reviews tab (hand-rolled, not MatTabsModule, server-rendered for SEO) with summary + paginated list + Verified Purchase badge. PR-4 eligibility-gated review form (rating 1-5 + body, 10-2000 chars, hydration-gated, distinct per-ineligibility messaging).
+- Code review findings: Success confirmation unmounted by post-submit eligibility refetch (hoisted to sibling of eligibility branches); whitespace-only body bypass in DTO (added trimmed() Transform). Both fixed before PR open.
+- Decisions: One branch bundles all 4 cards (contract + sequential dependencies). `authorName` derived at read time (firstName + last-initial fallback). Eligibility snapshot written true at submission, exists so future gate-relaxation doesn't silently flip past reviews. Tab group v1 ships one tab to allow Q&A/Shipping tabs later without rewrite.
+- Tests: api 800+/800+ · web 900+/900+ · lint clean · build clean.
+- Follow-ups: PR-5/PR-6 (edit/delete) remain optional scope, not built; no moderation/filtering v1; rating denormalisation deferred to counter-cache card; search ranking slot untouched for now.
