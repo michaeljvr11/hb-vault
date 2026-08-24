@@ -1,0 +1,8 @@
+# Session 37 — SF-1/SF-2/SF-3/SF-4/SF-5/SF-6: Configurable shipping fee (6-card batch)
+
+**Date:** 2026-08-24 · **Cards:** [#126](https://trello.com/c/DwnyCLnX) / [#130](https://trello.com/c/EjWUrO6V) / [#128](https://trello.com/c/aQTPJZJK) / [#127](https://trello.com/c/ybWTncOf) / [#129](https://trello.com/c/BU7PoQIm) / [#131](https://trello.com/c/eTv2Guoq) · **Branch:** `feat/DwnyCLnX-configurable-shipping-fee` · **Status:** Open
+
+- Shipped: SF-1 `shipping_fees` table (route+currency keyed, 8-row sets, append-only, seed 0.00) + admin endpoints + audit; SF-5 `product_shipping_fee_overrides` table (per-route/currency override, mutable, sparse) + upsert/clear endpoints; SF-3 fee resolution at order creation + `GET /shipping-fee/current` for checkout; SF-2 admin shipping-fee history screen (grid form, all 8 routes×currencies); SF-4 checkout line-item rendering (label from resolved route, unavailable state on fetch failure); SF-6 admin Vendor Products tab (read-only product content, override controls per route/currency).
+- Decisions: Route = (originCountry, destinationCountry) to cover all order shapes (NA→NA cheap, ZA→NA standard for pre-positioned stock). Fee "set" = all 8 combinations, one atomic POST, concurrency gated by UNIQUE. Override is mutable (mirrors `price`), not effective-dated. MAX across cart lines (one order, one fee). Parity spec enforces preview ≡ actual charge (`resolveShippingCents` shared).
+- Tests: api 931/931 · web 963/963 · lint clean · build clean · migrations up→down→up verified.
+- Follow-ups: Marketing copy "shipping + customs passed through" flagged for human review (Q1 outstanding action); checkout banner hardcodes ZA→NA (separate); Vendor Products tab scales to 100-item cap (ok for Phase 1).
