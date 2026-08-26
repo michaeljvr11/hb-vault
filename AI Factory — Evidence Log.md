@@ -10,10 +10,10 @@ tags:
 # AI Factory — Evidence Log
 _Source: `npm run evidence`. Refresh each cycle; the repo `REPORT.md` is the source of truth._
 
-**Snapshot (refreshed 2026-08-24)**
+**Snapshot (refreshed 2026-08-26)**
 
-- **262** commits (2026-06-11 → 2026-08-24); **251** carry the AI-authorship trailer (**96%**)
-- **+106,718 / −11,269** lines across **810** files
-- **143** test specs compiled from the repo (API 71 · Web 72)
-- Guardrails fired: **23** prod-fence blocks logged (push-to-protected, force-push, `gh pr merge`, merge/rebase on protected — all human-only) · **35** green PR gates · **272** lint issues fed back to agents
-- Traceability (latest): `DwnyCLnX` et al. PR open (6-card batch: configurable shipping fee, route+currency keyed, 8-row sets, per-product override sparse/mutable, MAX across lines, checkout parity spec, all tests green) — branch `feat/DwnyCLnX-configurable-shipping-fee`. Earlier batch: `23PYFGW7` PR-5/`7XSMAVih` PR-6 product-reviews-and-ratings (branch `feat/23PYFGW7-edit-delete-own-review`, PR open)
+- **268** commits (2026-06-11 → 2026-08-26); **257** carry the AI-authorship trailer (**96%**)
+- **+108 532 / −11 358** lines across **831** files
+- **149** test specs (API 72 · Web 77)
+- Guardrails fired: **23** prod-fence blocks logged (push names a protected branch ×17; force-push ×1; `gh pr merge` ×2; merge/rebase on protected ×2; bare push from protected ×1 — all human-only) · **36** green PR gates · **278** lint issues fed back to agents
+- Traceability (latest): `QQKjOiEH` et al. PR open (4-card batch: legal policy pages — privacy, cookies, terms, shipping, returns — plus signup consent capture and audit record) — branch `feat/QQKjOiEH-legal-policy-pages`. Earlier batch: `DwnyCLnX` (6-card batch: configurable shipping fee, route+currency keyed, 8-row sets, per-product override sparse/mutable, MAX across lines, checkout parity spec) — branch `feat/DwnyCLnX-configurable-shipping-fee`.
