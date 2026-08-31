@@ -1,0 +1,9 @@
+# Session 40 — 3QJYmybN + 5 related: Storefront Prelaunch Polish
+
+**Date:** 2026-08-31 · **Cards:** 3QJYmybN, wLQHce2J, 6nnBD4hS, 4Rugdi1d, 6p4mjTFS, wrpd9lGc · **Branch:** `feat/3QJYmybN-storefront-prelaunch-polish` · **Status:** PR open, awaiting human merge
+
+- Shipped: 7 commits, 6 cards bundled (converge on footer + nav + auth files). Logo regenerated 96→144px; brand links repointed to `/shop`; footer social icons replaced with WhatsApp/Instagram/TikTok; mobile nav overflow fixed (two independent causes: action controls hidden below 1280px, vendor section margin removed); search placeholders and contact page copy broadened post-UIC-1.
+- Decisions (owner): placeholder wording "Shop our latest products"; no Facebook page, so that icon dropped rather than pointed somewhere; Admin/Vendor wordmark goes to the storefront and the dashboard shortcut is dropped. Logo regenerated from the 2000px source rather than upscaled — the 96px asset existed to cover 32/28px renders at DPR 3.
+- Lesson: the Sell/utilities restore was first set to 1240px and passed a 320–1440px sweep that never included 1240 itself. Code review caught 32px of real overflow there by reading the comment's arithmetic. **A breakpoint sweep must test the breakpoint values, not just the device widths either side of them.**
+- Tests: web 1073/1073 green (+15 new), build clean (4 pre-existing SCSS budget warnings in files this branch doesn't touch), zero horizontal overflow at 320–1440px on `/shop`, `/discover`, `/contact`, `/login`, `/register`.
+- Follow-ups: `product-detail.html` still carries the same CP1252 mojibake on two "Loading…" strings; `profile-shell` has the same wordmark-to-own-dashboard pattern, not named on the card; `contact.ts` page title/meta and `ORDER_TYPE_OPTIONS` labels still read quote/import-only, now narrower than the broadened body copy.
