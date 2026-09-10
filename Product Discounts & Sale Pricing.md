@@ -46,7 +46,10 @@ Rounding is **half-up to 2 decimal places**, consistent with `Money & Currency R
   (confirmed with the product owner; the cap is a fat-finger guard, not a business ceiling).
 - `discountEndsAt` must be **strictly after** `discountStartsAt`.
 - The three discount fields are **all-or-nothing**: setting a discount requires all three;
-  omitting/nulling `discountPercent` clears all three.
+  an explicit `discountPercent: null` clears all three. On **update**, omitting all three
+  leaves an existing discount untouched — the same "absent = untouched" convention as
+  `categoryIds`/`sizes`. A window field sent without a percent is an incomplete triple and
+  is rejected, not treated as a clear.
 - The active window is **inclusive of both endpoints** — `discountStartsAt <= now <= discountEndsAt`.
   Both columns are `timestamptz`; "now" is the server instant, so the window means the same
   thing regardless of where the customer is.
@@ -96,9 +99,13 @@ PD-1..PD-5 build (cap 90; admin listings included).
 2. Admin-owned platform listings do get discounts in v1 (PD-4 shipped, not closed).
 3. The cart resolves the effective price too (see fix above) — this was found during the build, not spec'd up front.
 
-### Sharp edge — PATCH clears on omission
+### Corrected 2026-09-10 — PATCH no longer clears on omission
 
-Per PD-1's literal acceptance criteria, `PATCH /products/:id` treats the three discount fields as all-or-nothing on the wire, not just at the domain level: a request that omits `discountPercent` **clears** any existing discount (nulls all three), it does not leave it untouched. Both web callers (vendor PD-3, admin PD-4) always send all three fields — `null` when unset — specifically to avoid silently wiping a discount when the form is submitted to edit something unrelated. Any future caller of this endpoint must do the same, or explicitly re-send the current discount fields.
+The rule above originally read "`null`/omitted clears", and PD-1 implemented it literally: `PATCH /products/:id` treated the discount fields as all-or-nothing **on the wire**, so a request that omitted `discountPercent` nulled all three. That made renaming a product silently end a live sale, and it contradicted the `categoryIds`/`sizes` "absent = untouched" convention in the same DTO. It was caught in review of the PD-1..PD-5 PR and fixed before merge.
+
+`undefined` and `null` are now distinct signals: omitting all three discount fields leaves an existing discount untouched, and clearing requires an explicit `discountPercent: null`. Sending a window field without a percent is an incomplete triple and returns 400 rather than silently dropping the discount.
+
+Both web callers (vendor PD-3, admin PD-4) still send all three fields — `null` when unset — but now because the form genuinely owns all three, not as a defensive workaround. A new caller of this endpoint no longer has to know anything special.
 
 ### Verification
 
