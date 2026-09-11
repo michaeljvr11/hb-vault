@@ -224,3 +224,50 @@ so no new DTO is required.
 **PR:** #35 (https://github.com/michaeljvr11/hb-mono-repo/pull/35) — open, awaiting human merge.
 
 **Follow-ups:** `docs/design/vendor-profile/reference.png` screenshot not captured (Docker Desktop wasn't running locally, so the full stack couldn't be brought up for a live SSR screenshot); optionally list `vendor-profile` as implemented in `apps/web/CLAUDE.md` + the `DESIGN.md` screens table.
+
+### SSR API Routing — Internal Hairpin & Throttle Identity (2026-09-11, 83G6w4yZ)
+
+**Why this card is in this note:** The storefront spec covers public visibility + SSR enablement, but no infrastructure spec exists yet. This card fixes a critical defect in the SSR → API boundary introduced when the `/shop` route was restored to `RenderMode.Server` in slice 1. Rooted here rather than duplicated into a future infra note.
+
+**The defect:** During SSR the web server called `https://dev.hb-ecommerce.com/api` (the public URL). This request hairpinned through NAT back to Caddy, which proxied it internally to the `api` container. `ThrottlerModule` keys on `req.ip`, and with `trust proxy 1` Express resolves that to the *last* `x-forwarded-for` entry. Every hairpinned SSR request arrived from the same NAT'd address, so that one address was the throttle identity for every server render by every visitor — the entire site's catalogue routes (`/shop`, `/discover`, `/products/:id`, `/vendors/:id`) shared **one 120 req/min throttle bucket** — roughly 120/(calls-per-render) renders/min site-wide, invisible in dev/CI/tests. Fixing the destination alone does not fix identity; verbatim `x-forwarded-for` forwarding is load-bearing.
+
+**What shipped:**
+- `apps/web/src/app/core/http/ssr-api-interceptor.ts` (new) — functional `HttpInterceptorFn`. Rewrites SSR calls from `environment.apiBaseUrl` onto `INTERNAL_API_BASE_URL` (an injectable token, null in the browser) and **forwards `x-forwarded-for` verbatim** — no append. One file replaces `isPlatformServer` checks at 91 call sites across 44 files.
+- `apps/web/src/app/core/http/internal-api-base-url.token.ts` (new) — `INTERNAL_API_BASE_URL` token + `parseInternalApiBaseUrl` boot-time validation (rejects malformed schemes, missing paths, and aborts before port bind).
+- `apps/web/src/app/app.config.ts`, `app.config.server.ts`, `server.ts` — token provisioning (server-only via `app.config.server.ts`; browser gets unconditional pass-through).
+- `docker-compose.prod.yml` — `INTERNAL_API_BASE_URL: http://api:3000/api` on `web` service.
+- `apps/web/src/app/core/http/ssr-api-interceptor.spec.ts` — 14 specs + mutation test (appending XFF fails exactly one spec).
+- `apps/web/CLAUDE.md` — SSR gotchas bullet point added.
+
+**Key decisions:**
+- **Verbatim XFF, never appended.** Tested directly: verbatim forward → `req.ip` = real client; appended → `req.ip` = proxy address, collapses throttle bucket. The single most load-bearing detail.
+- **Registration in `app.config.ts`, not `app.config.server.ts`.** Angular exposes no public API for functional interceptor contributions from a separate config. Server-only provisioning via the token means the browser gets the unconditional pass-through.
+- **Transfer-cache origin split (caught in code review).** `provideClientHydration()` + user interceptors = server caches under internal URL, browser looks up public URL → guaranteed miss → double-fetch billed to real throttle. Fixed with `HTTP_TRANSFER_CACHE_ORIGIN_MAP`, Angular's purpose-built token for a server/client origin split. Because that map is origin-only, the internal URL must keep the same `/api` suffix as the public one.
+- **Anchored prefix match** (separate review finding) so a same-origin sibling like `/api-docs` or `/apiary` isn't dragged onto `api:3000` — Caddy routes only `/api/*` there.
+- **Malformed config aborts at boot.** `INTERNAL_API_BASE_URL=api:3000/api` (missing scheme) parses as `api:` scheme, yields origin `"null"`, silently breaks the cache again. `=/api` (missing host) throws deep in module init. Both now abort with a message naming the variable, before the port binds.
+
+**Verification (complete locally; post-deploy checks remain open):**
+- Express `trust proxy 1` probed directly for all four XFF shapes.
+- Mutation test: appending to XFF fails exactly one spec — the verbatim one.
+- End-to-end against the built SSR server: `/shop` rendered 98KB with `ng-server-context="ssr"`, all 4 API calls hit `http://api:3000/api` carrying `x-forwarded-for: 203.0.113.7` verbatim, no public URL in output, clean stderr.
+- Transfer-cache proof: rendered `/shop` against two different internal base URLs, diffed embedded `ng-state` keys. Before the fix every key differed; after, byte-identical (computed from the public origin the browser uses).
+- All four config paths on the real built server: correct URL → SSR + verbatim XFF; unset → public URL, renders fine; both typos → boot aborted, message names the variable.
+- Browser bundle checked: no `process.env` reads, no origin-map provider leaked.
+- `npm run test -w @hb/web` → 1291 green, 86 files. `npm run build` → clean.
+
+**Tests & build:**
+- `npm run test -w @hb/web` → 1291/1291 passed (+14 new in `ssr-api-interceptor.spec.ts`). `npm run build` → clean.
+- API suite and `lint:api` deliberately not run locally: this card touches no `apps/api` or `libs/shared` code. CI re-runs both as the PR gate.
+
+**Code review outcome:** First pass returned **NO-SHIP** on one blocking FAIL — the transfer-cache origin split, an undetected double-fetch on every catalogue page that neither the unit tests nor the end-to-end run had caught. That was the most valuable finding of the card. It was fixed and the fix independently verified (see the transfer-cache proof above), along with two WARNs (anchored prefix match, an inaccurate trust-boundary comment). The confirming re-review pass was cut off by a session rate limit and did not complete; its focus points were instead verified directly — origin-map direction against Angular's own token docs, the unset path, browser-bundle leakage, and the `new URL()` crash path (which surfaced the boot-validation gap fixed in commit 4). Worth a fresh review pass before merge.
+
+**PR:** (https://github.com/michaeljvr11/hb-mono-repo/pull/...) — branch `feat/83G6w4yZ-ssr-internal-api-routing`, 6 commits, open.
+
+**Acceptance criteria — post-deploy verification required:**
+- ✓ SSR API calls now hit the internal address (`http://api:3000/api` not the public hairpin).
+- ✓ `x-forwarded-for` forwarded verbatim (not appended or replaced).
+- ✓ Transfer-cache keys computed from the public origin (no double-fetch).
+- ✗ Absence of hairpinned requests in Caddy access log during a `RenderMode.Server` render — **must verify on the deployed dev box**.
+- ✗ Load test: N concurrent `/shop` renders (N × calls-per-render >> 120/min) yield zero 429s — **must verify on the deployed dev box**.
+
+All other acceptance criteria met locally. The two above are deploy-time checks for the operator.
