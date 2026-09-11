@@ -271,3 +271,29 @@ so no new DTO is required.
 - ✗ Load test: N concurrent `/shop` renders (N × calls-per-render >> 120/min) yield zero 429s — **must verify on the deployed dev box**.
 
 All other acceptance criteria met locally. The two above are deploy-time checks for the operator.
+
+### HTML-origin security headers come from Caddy, not helmet (2026-09-11, SEC-1 / SEC-2)
+
+Recorded here because it is a property of the SSR serving path, not of auth. Full detail in
+[[Auth & Roles]] (SEC-1..SEC-4 note).
+
+- **The SSR HTML origin gets its security headers from the Caddy edge, not from `helmet`.**
+  `helmet()` runs inside the NestJS process, which serves only `/api/*` and `/uploads/*`. The
+  Angular SSR app is a separate container behind the same hostname, so it never received any of
+  helmet's headers. Verified live on 2026-09-11: `/shop` carried no CSP, no `X-Frame-Options`
+  and no `Permissions-Policy`, while `/api/health` carried all three. SEC-1 adds
+  `Content-Security-Policy "frame-ancestors 'none'"`, `X-Frame-Options DENY`, a
+  `Permissions-Policy` and `-X-Powered-By` at the edge.
+- **Those headers are scoped to the web `handle` in the `Caddyfile`, and that placement is
+  load-bearing.** The site-wide `header` block uses `defer`, which **replaces** rather than
+  appends. A site-wide `Content-Security-Policy` would therefore overwrite the full policy
+  helmet sets on `/api/*` (`default-src 'self'`, `object-src 'none'`, `script-src 'self'`, …)
+  with nothing but `frame-ancestors` — a downgrade of the API's headers. Scoping to the web
+  handle leaves helmet untouched and covers only the pages it never reached.
+- **The non-production gate now sits in front of the SSR app.** Basic auth plus
+  `X-Robots-Tag: noindex, nofollow` at the edge, env-driven, for the dev box only. `/api/health`
+  is exempt. Relevant to SSR because there is no `robots.txt` — `/robots.txt` 302s into the
+  Angular catch-all, and `RenderMode.Server` serves ~98KB of fully rendered HTML, which makes
+  the box ideal crawler food.
+- Nonce-based CSP for the HTML origin (SEC-5, card `YYjbfc65`) is **not** shipped — it risks
+  breaking Angular hydration and needs its own live-browser verification pass.
