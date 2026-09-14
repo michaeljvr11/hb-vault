@@ -17,7 +17,7 @@ JWT access token + **rotating hashed refresh token in an httpOnly cookie**. Glob
 - New protected endpoints: rely on the global guards + `@Roles`; never hand-roll auth checks in controllers.
 - **Role is never client-settable.** Self-registration is always `customer`; elevation happens only via the admin-only `PATCH /admin/users/:id/role` or vendor onboarding. New self-service DTOs must not accept `role`/`isActive`/`vendorId`. See repo-root `SECURITY.md` + the 2026-07-02 audit note below.
 - Ownership checks live in the service layer (e.g. vendor editing own product) — keep that pattern.
-- Frontend: `localStorage` access is platform-guarded (`isPlatformBrowser`) because of SSR. Auth state lives in `AuthService` — extend it, don't fork it.
+- Frontend: `localStorage` access is platform-guarded (`isPlatformBrowser`) because of SSR. Auth state lives in `AuthService` — extend it, don't fork it. **Access token is NO LONGER stored in localStorage** (moved to in-memory only per SEC-7); other app state like consent/analytics still legitimately use localStorage.
 - Secrets stay in `apps/api/.env` (gitignored). Frontend env files hold only `apiBaseUrl` + flags.
 
 ## To implement:
@@ -208,6 +208,18 @@ behavioural checks against real Caddy driven through real `docker compose` env r
 
 **PR:** open on branch `feat/BGykPFS7-security-guards-batch`.
 
-**Still open:** SEC-5 (nonce CSP); the `localStorage` → in-memory access-token refactor;
-confirming `CORS_ORIGINS` is present in `/opt/hb/.env` before merge (now enforced by
-`deploy.sh`, but a missing value blocks the deploy).
+**Still open (as of this 2026-09-11 batch):** SEC-5 (nonce CSP); the `localStorage` → in-memory
+access-token refactor; confirming `CORS_ORIGINS` is present in `/opt/hb/.env` before merge (now
+enforced by `deploy.sh`, but a missing value blocks the deploy). **Both SEC-5 and the
+access-token refactor (SEC-7) landed 2026-09-14 — see the entry immediately below.**
+
+
+### Access token to in-memory storage — SEC-5 & SEC-7 — 2026-09-14 (cards YYjbfc65, XodVNFmi; branch `feat/YYjbfc65-sec-cleanup-batch`)
+
+**SEC-7 core:** JWT access token moved from `localStorage` (XSS-readable) to an in-memory field in `AuthService` (`providedIn: 'root'`), matching the vault's own settled "Auth & Roles" design. Session recovery on page load now happens via `POST /auth/refresh` against the httpOnly refresh cookie (server-verified, secure). SSR stays anonymous (no cookie jar, every auth-required route already client-render-only). **Two review rounds caught real gaps:** (a) a "Concurrency" requirement missed on first read — rotating a single-slot refresh token on every page load made concurrent browser tabs silently log each other out. Fixed with a shared single-refresh choke point plus cross-tab coordination via the Web Locks API. (b) A follow-up interceptor bug where a 401 on `/auth/login` itself was being swallowed and replaced with a refresh error, and a failed refresh wasn't clearing stale auth state — fixed and tested.
+
+**SEC-5 parallel:** HTML origin (`apps/web/src/server.ts`) now generates a per-request nonce, sets a real CSP header with no `unsafe-inline` anywhere, threads the nonce into Angular's SSR render via a `CSP_NONCE` DI token, and patches any inline `<script>`/`<style>` tag Angular didn't nonce itself. Removed the duplicate `Content-Security-Policy` line from the `Caddyfile` (its `header`+`defer` replaces rather than appends, so it was stomping Express's policy). **Review round caught three bugs:** stale response truncation on 10 prerendered routes (stale `Content-Length` after body patching), stale-nonce CSP violations on 304 browser replays (stale `ETag`), and legitimate inline `style="..."` bindings being blocked (fixed by adding `style-src-attr 'unsafe-inline'`, which does NOT reopen the `<script>`/`<style>` XSS vector this card exists to close). Live-browser verification: zero CSP violations, hydration + event-replay confirmed.
+
+**Tests:** API 78 suites/1061 tests, Web 89 files/1326 tests. Full build clean.
+
+**Branch:** `feat/YYjbfc65-sec-cleanup-batch` (batched with SEC-6 Angular patch bump guardrail + SEC-8 Meilisearch scoped keys; PR pending).

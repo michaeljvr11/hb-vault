@@ -270,3 +270,10 @@ Recommended order: 1 → 2 → (3, 5 parallel) → 4 → 6. Card 7 is backlog, n
 - `npm run build` clean; code-review verdict SHIP (one a11y nit — per-input aria-labels — fixed).
 
 **Follow-ups:** none. (Related backlog: card #51 canonical-product/buy-box grouping remains deferred.)
+
+
+### Meilisearch scoped client keys — SEC-8 — 2026-09-14 (branch `feat/YYjbfc65-sec-cleanup-batch`)
+
+**What changed:** API no longer runs every Meilisearch consumer (query path AND indexing/settings/synonyms writes) off a single client built from `MEILI_MASTER_KEY`. Split into two scoped clients: `MEILI_SEARCH_KEY` (read-only, query path) and `MEILI_ADMIN_KEY` (index/settings/synonyms writes). The running API process now never reads `MEILI_MASTER_KEY` at all — `docker-compose.prod.yml`'s `api` service dropped blanket `env_file: - .env` (which would have leaked the master key) for an explicit env allowlist. Local dev's root `docker-compose.yml` unchanged — its meilisearch container still needs the master key to mint the two scoped keys once on startup, documented in `docs/runbooks/dev-server.md`.
+
+**Branch:** `feat/YYjbfc65-sec-cleanup-batch` (batched with SEC-5 nonce CSP, SEC-6 Angular guardrail, SEC-7 in-memory access token; PR pending).
