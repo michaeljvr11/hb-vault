@@ -297,3 +297,119 @@ Recorded here because it is a property of the SSR serving path, not of auth. Ful
   the box ideal crawler food.
 - Nonce-based CSP for the HTML origin (SEC-5, card `YYjbfc65`) is **not** shipped — it risks
   breaking Angular hydration and needs its own live-browser verification pass.
+
+### Follow-up: Prerendering still depends on a reachable API at build time (flagged 2026-09-21, PR #84)
+
+**Why this is here, not a new note:** same class of problem as the SSR API Routing card
+above — the SSR → API boundary — but at build time instead of request time. [[Public
+Storefront & SSR]] already owns render-mode decisions (open question 2, resolved via
+[[Landing Site Migration]] LSM-2/LSM-3 and [[Legal & Compliance Readiness]] LC-2..LC-10);
+this is a defect in how those `Prerender` routes render, not a new route decision.
+
+**The problem:** `PROD-1` (`feat/KYwTmZyB-runtime-api-base-url`) made the *runtime* browser
+API base URL resolve at request time so one built `web` image is promotable across
+environments — see the SSR API Routing card above for the sibling fix on the server side.
+But `apps/web/src/app/layout/category-nav/category-nav.ts`'s constructor calls
+`this.store.load()` (`CategoryNavStore.load()`) unconditionally, with no
+`isPlatformBrowser` guard. `<app-category-nav>` is mounted inside `<app-nav-bar>`, which
+every page's layout includes — so `ng build`'s route-extraction step, which actually
+executes each `Prerender` route's component tree to produce static HTML, issues a live
+`GET /categories` against whatever `INTERNAL_API_BASE_URL` (`PRERENDER_API_BASE_URL` at
+Docker build time — `apps/web/Dockerfile`) happens to point at. All ten current
+`RenderMode.Prerender` routes go through the same shared nav-bar layout: `/about`,
+`/services`, `/contact`, and the seven `/legal/*` pages.
+
+Net effect: the **content baked into the artefact** — not just its configuration — depends
+on whichever environment the build could reach that day. That is the same category of
+problem PROD-1 solved for the runtime base URL, one layer earlier: a promotable image
+should render identically regardless of which environment produced it; today the prerendered
+HTML's category nav silently differs (or the build fails outright, as CI did on PR #84,
+fixed there only by pointing CI's build step at a real reachable URL — a workaround, not a
+fix for the coupling itself).
+
+**Goal:** the ten static marketing/legal pages prerender without a live category fetch,
+removing the build-time API dependency for them entirely. `/shop`, `/discover`,
+`/products/:id`, `/vendors/:id` (`RenderMode.Server`, request-time, not build-time) are
+unaffected and must keep rendering the nav with live category data — this follow-up is
+scoped to the `Prerender` routes only.
+
+**Business rules / contract impact:** none expected. No `@hb/shared` change — this is
+purely about *when* the nav's existing category fetch runs, not the data shape. No new
+endpoint, no migration.
+
+**Out of scope:**
+- Any change to `RenderMode.Server` pages' category-nav behaviour — they should keep
+  fetching live at request time.
+- Redesigning `CategoryNavStore` or `CategoryNav`'s rendering beyond what's needed to make
+  it safe for the server-only, no-request prerender pass (same class of change as the
+  existing `isPlatformBrowser` guards elsewhere in `nav-bar.ts` for cart/wishlist priming).
+- The CI workaround already shipped on PR #84 (`INTERNAL_API_BASE_URL` env var on the
+  `gates` job) — that stays; it makes the build succeed against a known-reachable URL, it
+  just doesn't remove the dependency this card is about.
+
+**Open questions:**
+1. Should the ten prerendered pages ship with an empty/no category nav in the baked HTML
+   (corrected client-side after hydration, mirroring the cart-badge "0 until hydration"
+   pattern already in `nav-bar.ts`), or should they keep a nav but source it from something
+   that doesn't require a live request (e.g. no categories in the prerendered shell at all,
+   since these pages aren't catalogue-browsing entry points)? Recommend the former — reuse
+   the pattern already proven safe for SSR/hydration parity in this file.
+2. Any SEO impact of the category nav being absent from the initial HTML on these ten
+   pages? Likely none — they're marketing/legal content, not catalogue pages, so the nav
+   isn't part of what search engines need to index there — but flag for confirmation since
+   [[Public Storefront & SSR]]'s whole premise is SEO-driven SSR.
+
+## Vertical slices → Trello cards (follow-up)
+
+| # | Title | Card ID |
+|---|---|---|
+| 1 | Guard CategoryNav's build-time fetch so Prerender routes don't need a live API | E0knLhvG |
+### Guard CategoryNav's build-time fetch on Prerender routes (2026-09-21, E0knLhvG)
+
+**What shipped:**
+- `apps/web/src/app/layout/category-nav/category-nav.ts` — constructor now injects `REQUEST` (`{ optional: true }`) alongside `PLATFORM_ID`, and calls `store.load()` only when `isPlatformBrowser(platformId) || request`. Skips the live fetch exclusively on a true build-time prerender pass (no request, no browser).
+- `apps/web/src/app/layout/category-nav/category-nav.spec.ts` — new specs covering all three states: browser (loads), server-with-request (loads), server-no-request (skips).
+- `apps/web/CLAUDE.md` — new SSR-gotchas bullet documenting the pattern.
+
+**Key decision:**
+- `isPlatformBrowser` cannot distinguish build-time prerender from a real `RenderMode.Server` request — both report the server platform. The fix reuses the same `inject(REQUEST, { optional: true })` technique `app.config.server.ts` already uses for `HTTP_TRANSFER_CACHE_ORIGIN_MAP`, rather than inventing a new mechanism.
+
+**Verification:**
+- `npm run build` (root) succeeds with `INTERNAL_API_BASE_URL` pointed at an address that refuses connections (`http://127.0.0.1:1/api`) — proves the build-time dependency is genuinely gone, not just tolerant of a slow API. Log shows "Prerendered 10 static routes."
+- `/shop` (`RenderMode.Server`) still attempts the live fetch at request time (confirmed via dev-server spot check — full end-to-end with real data blocked by a pre-existing local-dev gap, missing `MEILI_SEARCH_KEY`, not a regression).
+
+**Tests & build:**
+- `npm run test -w @hb/web` passes; `npm run build` clean.
+
+**Code review outcome:**
+- SHIP.
+
+**PR:** #90 (https://github.com/michaeljvr11/hb-mono-repo/pull/90) — branch `feat/ESMDKpTW-seo-prerender-fixes`, open, awaiting human merge.
+
+---
+
+### SEO-1: Production robots.txt and sitemap (2026-09-21, ESMDKpTW)
+
+**What shipped:**
+- `apps/web/src/server.ts` — new `/robots.txt` and `/sitemap.xml` Express routes registered ahead of the Angular catch-all. `robots.txt` allows the storefront, disallows `/checkout`, `/cart`, `/profile`, `/wishlist`, `/admin/*`, `/vendor/*`, `/auth/*` (six are guard-protected; `/auth/*` covers the public OAuth callback — excluded for indexing hygiene, not authorization), references the sitemap. Sitemap covers the ten prerendered static pages (derived directly from `app.routes.server.ts`'s `RenderMode.Prerender` entries) plus `/shop`, `/discover`, every product (`/products/:id`, paginated live fetch from `GET /products`), every approved vendor (`/vendors/:id`, from `GET /vendors/directory`), and categories as `/discover?categoryId=<id>`. Absolute URLs derived from incoming request's `x-forwarded-proto`/`x-forwarded-host` (validated against `NG_ALLOWED_HOSTS`), falling back to `req.protocol`/`req.get('host')` for local dev — never baked at build time.
+- Sitemap generation is cached in-memory with a 15-minute TTL, concurrent-request coalescing, and a 10-second wall-clock response budget that degrades to the static-page-only list if the API fan-out is slow; failed fetches logged (status + endpoint/page) rather than silently truncating.
+- `apps/web/src/app/shared/canonical-url.ts` (new) — `createCanonicalUrlSetter()` helper wired into `product-detail.ts` and `vendor-profile.ts` for self-referential `<link rel="canonical">` tags, with `DestroyRef`-based cleanup so the tag doesn't go stale across SPA navigation.
+- `apps/web/src/server.spec.ts` (new) — unit coverage for origin derivation (proxy-header trust + `NG_ALLOWED_HOSTS` validation), robots.txt content, sitemap XML building.
+- `apps/web/src/app/shared/canonical-url.spec.ts` (new) — covers set-on-init and remove-on-destroy/next-page.
+
+**Key decisions:**
+- **Dynamic, not static, generation.** One built `web` image must be promotable across environments with no baked hostname; a build-time-generated sitemap repeats the E0knLhvG defect just fixed for `CategoryNav`. Generating both at request time, resolving origin from the request, keeps one image correct everywhere.
+- **robots.txt's disallow rules are environment-agnostic.** Dev box's `X-Robots-Tag: noindex, nofollow` header (set at Caddy edge, per SEC-2) already fully suppresses indexing; robots.txt does not need to redo that job.
+- **Categories have no dedicated route**, so sitemap entries use `/discover?categoryId=<id>`.
+- **Canonical URLs are self-referential only.** Checked: no product or vendor page is reachable via more than one URL path (card's AC was conditional), so no duplicate-path reconciliation logic built. Self-referential canonicals added as low-risk SEO hygiene.
+- **`PUBLIC_API_URL`/production-origin reconciliation deferred** — no live deployment yet (gated on separate legal-compliance card), so this AC item is a deploy-time check for the operator, not verifiable now.
+
+**Tests & build:**
+- `npm run test -w @hb/web` → 91 files / 1348 tests passed.
+- `npm run build` (root, shared → api → web) succeeds both normally and with `INTERNAL_API_BASE_URL` pointed at an unreachable address.
+
+**Code review outcome:**
+- First pass returned FIX-FIRST on 4 blocking findings: (1) canonical link went stale across SPA navigation (not removed), (2) sitemap's live-data fetch was unbounded/uncached with no wall-clock budget, (3) failed page fetches truncated the sitemap silently, (4) comment inaccurately claimed all seven robots.txt disallow paths were guard-protected. All four fixed; confirming re-review verdict was SHIP.
+- Non-blocking follow-ups: a source-fetch failure during sitemap fan-out can get cached as "complete" for the full 15-minute TTL rather than retried sooner (worth a follow-up if a real API outage exposes it); sequential product-page fetches share one throttle-bucket IP with the deployed container, self-rate-limiting above roughly 12,000-product catalogue (not a regression, scaling note).
+
+**PR:** #90 (https://github.com/michaeljvr11/hb-mono-repo/pull/90) — branch `feat/ESMDKpTW-seo-prerender-fixes`, open, awaiting human merge.
