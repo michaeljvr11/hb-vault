@@ -444,3 +444,7 @@ PR not yet opened at time of documentation (lead opens it right after this doc p
 - Section-id character-set validation (`@Matches` on the DTO) to harden the `aria-labelledby` wiring — section id (vendor-controlled free text, `@MaxLength(64)`, no character-set restriction) is interpolated directly into a DOM `id`/`aria-labelledby`. A section id containing a space or other special characters could theoretically degrade accessibility wiring (low severity, not reachable through the portal's own UI which generates ids via `crypto.randomUUID()`).
 - Logo could switch off `loading="lazy"` since it's above the fold; currently lazy-loaded, not the LCP element so minor.
 - The 100-product fetch cap should eventually get real pagination (tracked informally, not a card yet) — this note now documents that limitation centrally for a future prioritization pass, since previously it was only mentioned in VPC-4's follow-ups as a portal-picker-specific issue.
+
+## Implementation Notes — 2026-09-25 (prelaunch batch, XWbllttP)
+
+**Vendor `description` moved to public `VendorDto`** (card XWbllttP). Public `GET /vendors/:id` and `GET /vendors/directory` endpoints now serialize `description` (inherited by `VendorSelfDto`/`AdminVendorDto`, not duplicated). Privacy boundary stays `registrationNumber`/`verificationDocumentUrl`/`website` (admin-only). Rendered on the public `/vendors/:id` page in the hero/about area with `white-space: pre-line`, nothing rendered when blank. PR pending.

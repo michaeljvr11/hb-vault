@@ -141,8 +141,8 @@ deleted or rewritten in the same PR — that is the test obligation for this bat
 - `trust-banner` "zero cross-border fees for verified users" — refers to *user* email
   verification, unrelated to vendor vetting. Leave it.
 - The remaining `href="#"` placeholder footer links and other `notifyComingSoon` targets
-  (Currency switcher, Newsletter, Support, Terms of Trade, Privacy Policy, My Orders) —
-  those represent real intended features, unlike SME Directory / Logistics.
+  (Support, Terms of Trade, Privacy Policy, My Orders) — those represent real intended features.
+  Currency switcher and Newsletter `notifyComingSoon` targets are now real (bNZweqNF, S3IEP59u).
 - Building an SME Directory or Logistics page. The request is removal, not deferral.
 - Dark mode. The app has no dark theme (no `prefers-color-scheme` anywhere in `apps/web`).
 - Rebuilding the PDP sticky bar as a desktop-only or scroll-aware component. Sizing fix only.

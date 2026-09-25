@@ -195,6 +195,7 @@ ReviewDto {
 ProductReviewSummaryDto {
   averageRating: number | null;  // null when reviewCount === 0 — never 0, which reads as "rated 0 stars"
   reviewCount: number;
+  ratingDistribution: Record<1|2|3|4|5, number>;  // count per star, computed in same query via COUNT(*) FILTER (WHERE rating = n)
 }
 
 ProductReviewListDto extends PagedResponse<ReviewDto> {
@@ -380,3 +381,7 @@ Shipped as four consecutive slices on one branch, `feat/4loUsIJ7-review-contract
 ### Testing
 
 `npm run lint:api` clean · `npm run test:api` **860/860** · `npm run test -w @hb/web` **930/930** · `npm run build` clean (pre-existing SCSS budget warnings in `product-detail.scss` now 7.24kB over budget due to edit/delete markup duplication — flagged as minor follow-up, not fixed, out of scope). Code review (pre-PR) caught three issues: (1) PR-5 malformed UUID → unhandled 500, fixed with `ParseUUIDPipe`; (2) PR-6 error message nesting → unmount-on-refetch, hoisted outside eligibility branches; (3) PR-6 test mocks stale after error, now agree with error state.
+
+## Implementation Notes — 2026-09-25 (prelaunch batch, 1IOweJ0t / SVO-11)
+
+**Rating distribution bars shipped** (card 1IOweJ0t / SVO-11). `ProductReviewSummaryDto.ratingDistribution: Record<1|2|3|4|5, number>` added and computed in the same query as average/count via `COUNT(*) FILTER (WHERE rating = n)`. PDP bars now render at any review count (hidden only at zero); removed the `items.length >= total` page-scope guard that was blocking bars on low-volume products. PR pending.
