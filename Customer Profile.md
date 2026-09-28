@@ -121,3 +121,33 @@ No changes to `OrderDto` / `AdminOrderListItemDto` etc. — order history is rea
 
 - Default-address flag + checkout integration (separate card).
 - Profile picture / avatar upload (deferred, no file-storage provider wired).
+
+## Settings & Appearance — Light/Dark/System Theme Toggle
+
+**2026-09-28 — SHIPPED (batch on feat/8QGKsOPB-taxonomy-theme-vendor-cart-batch, card e1axOfc1)**
+
+**What shipped:**
+- **`ThemeService` (new):** signal-based service (`@Injectable({ providedIn: 'root' }`). Stores theme state ('light' | 'dark' | 'system') in localStorage key `hb.theme`. On init: reads localStorage, falls back to 'system'; emits signal. SSR-safe — no browser APIs outside `isPlatformBrowser`.
+- **Pre-paint inline script:** `index.html` now carries a nonce-injected `<script>` tag (CSP nonce added by `server.ts` via `addNonceToUnnoncedInlineTags`) that runs before paint, reads localStorage `hb.theme`, and applies the appropriate `class` attribute to `<html>` ('light', 'dark', or omits for 'system'). Eliminates FOUC (flash of unstyled content) on reload/navigation.
+- **Profile Settings page toggle:** `/profile/settings` gained a "Appearance" section with a radio group (Light / Dark / System) that calls `ThemeService.setTheme()` on select. Reactive, persisted.
+- **Account dropdown (nav-bar):** "Settings" link + inline theme-mode indicator/quick-toggle (displays current mode, cycles Light→Dark→System on click).
+- **Mobile radial nav:** Tap-to-cycle theme-mode action in the 5-item radial ring (angles: Light, Dark, System, + 2 others). Cycles Light→Dark→System→Light on repeated taps.
+- **Signed-out state:** Desktop navigation has no theme toggle for anonymous visitors (follow-up if wanted).
+
+**Key decisions:**
+- System mode = no `class` attribute on `<html>` (browser/OS preference takes over).
+- localStorage key `hb.theme` is non-standard but avoids collisions in shared storage.
+- Pre-paint script runs before render (eliminates FOUC), nonce-protected for CSP compliance.
+- Signed-out users have no toggle (authenticated-only feature for now).
+
+**Tests & build:**
+- `npm run test -w @hb/web` → 1527 passed (ThemeService coverage, toggle rendering, localStorage read/write, SSR safety).
+- `npm run build` → clean. **SCSS budget warning:** `nav-bar.scss` over 8kB limit (flagged but not blocking; future polish).
+
+**Code review outcome:** SHIP. Four minor warnings noted (localStorage-null edge case, theme-attribute race on hydration, radial-nav animation timing, budget warning).
+
+**Follow-ups:**
+- nav-bar.scss budget trim (existing issue, separate polish card).
+- System-mode FOUC for first-time visitors (rare; could add a fallback default).
+
+**PR:** pending on batch branch feat/8QGKsOPB-taxonomy-theme-vendor-cart-batch.

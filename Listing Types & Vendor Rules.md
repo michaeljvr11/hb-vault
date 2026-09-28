@@ -52,6 +52,9 @@ KYC / banking / verification-document review is a **future card** — leave the
 Related: [[HB Domain Model]] · [[Money & Currency Rules]]
 
 
+
+- ~~Is there a vendor trust tier above `approved`?~~ **Resolved 2026-09-21** — No. The `approved` badge remains the only trust signal shown to buyers; UIC-1's removal of the "SME Verified" badge/filter stands unamended. See Trello SVO-2 (`V2ydEr5X`, archived).
+
 ## Implementation Notes — Public vendor directory (2026-06-18)
 
 **Card L9fM1Gu7 "Implement Store front"** shipped via PR #4. New public `GET /vendors/directory` endpoint returns only `approved` vendors (enforcing the rule that only approved vendors are public-facing). The storefront at `/shop` consumes this to render "Featured SME Vendors" alongside a hero, product carousel, trust banner, category grid, and newsletter signup.
@@ -86,3 +89,30 @@ Related: [[HB Domain Model]] · [[Money & Currency Rules]]
 **PR:** #23 (https://github.com/michaeljvr11/hb-mono-repo/pull/23) — open, awaiting human merge.
 
 **Related:** [[Public Storefront & SSR]]
+
+## Implementation Notes — Vendor public directory listing count (card SVO-8, roDUKEED)
+
+**2026-09-28 — SHIPPED (batch on feat/8QGKsOPB-taxonomy-theme-vendor-cart-batch)**
+
+**What shipped:**
+- **`VendorResponseDto.productCount` field (new, optional):** on public endpoints (`GET /vendors/directory`, `GET /vendors/:id`), populated with a grouped count of `listingType = 'VENDOR'` listings where vendor status = 'APPROVED' (same rule as `ProductsService.findAll` visibility). Only for approved vendors; omitted from admin/self responses (no exposing count to vendor applicants, only to the public).
+- **`deriveVendorListingCounts` removed:** no longer needed; count is server-side now.
+- **Showcase zero-hiding:** when `productCount === 0`, the vendor showcase on `/shop` hides the card (no empty vendor tile).
+
+**Key decisions:**
+- Count is read-only, computed server-side (no client-side derivation).
+- Approved-only rule matches the approved-vendor visibility gate already in `ProductsService.findAll`.
+- Optional field — admin/self vendor responses omit it.
+- Zero count = hide from showcase (UX decision).
+
+**Tests & build:**
+- `npm run test:api` → 1268 passed (vendor count query, approved-only filter).
+- `npm run test -w @hb/web` → 1527 passed (showcase zero-hiding).
+- `npm run lint:api` → clean. `npm run build` → clean.
+
+**Code review outcome:** SHIP. No FAILs.
+
+**Follow-ups:**
+- Vendor analytics dashboard to show count separately (future admin feature).
+
+**PR:** pending on batch branch feat/8QGKsOPB-taxonomy-theme-vendor-cart-batch.

@@ -93,6 +93,7 @@ From [[Listing Types & Vendor Rules]], [[Public Storefront & SSR]] — enforce, 
 3. **Parent delete — block vs. cascade-to-children?** Recommendation: block while children
    exist (forces explicit intent); revisit if admins want cascade.
 4. **Search fields — name+description, or name only?** Recommendation: name + description.
+5. **Second-level taxonomy for v1?** **Resolved 2026-09-21 — Yes.** The admin category form gains a `parentId` selector (top-level categories only, depth capped at two), with cycle/re-parenting guards and seed data exercising the grouped flyout. Tracked on Trello SVO-6 (`8QGKsOPB`) — **SHIPPED (PR pending on feat/8QGKsOPB-taxonomy-theme-vendor-cart-batch)**.
 
 ## Implementation Notes — Safe category delete (slice 3, card Sm1kSNO8)
 
@@ -249,3 +250,36 @@ filter compose in one query builder. Slice 4 is a fast-follow to slices 1–2.
 - Minor constant-consolidation nits (e.g., `PRODUCT_LIST_MAX` as a named constant in schema/contracts).
 
 **PR:** #36 (https://github.com/michaeljvr11/hb-mono-repo/pull/36) — open, awaiting human merge.
+
+---
+
+## Implementation Notes — Second-level taxonomy (card SVO-6, 8QGKsOPB)
+
+**2026-09-28 — SHIPPED (batch on feat/8QGKsOPB-taxonomy-theme-vendor-cart-batch)**
+
+**What shipped:**
+- **`@hb/shared` contract:** `CategoryDto` already supported `parentId?: string` (nullable); no new contract change needed.
+- **API validation (`CategoriesService`):** `PATCH /categories/:id` now enforces: parent must exist (404 if parentId is set to unknown id), no self-parent (400), no cycles detected (via recursive walk), parent must be top-level (400 if `parent.parentId` is not null — depth capped at 2), category with children cannot become a child (400 promotion check). `PATCH` with `parentId: null` promotes a child to top-level. Create checks `parentId` does not exceed depth.
+- **Admin UI (`admin-catalog`):** Categories tab gained a new `parentId` selector in the create/edit form (top-level categories only, excludes self). Existing "Categories" CRUD flows now respect the parent constraints.
+- **Seed data (`npm run seed`):** Five child categories added under the existing top-level parents (Agriculture x2: Crops & Livestock; Handicrafts x2: Textiles & Art; Health & Beauty x1: Personal Care), keyed by slug so idempotent on re-runs; also safe on already-seeded databases.
+- **Safe delete unchanged:** `Sm1kSNO8` rules still block deletion of in-use and parent categories (no change).
+
+**Key decisions:**
+- Depth cap = 2 (one parent level). No n-level recursive taxonomy.
+- Cycle detection via recursive `findCycles` walk in the service layer (admin-only, rare operation — not transactional).
+- No migration — `parentId` column already exists on `categories` table.
+- DTO `parentId` remains `string | undefined` in the response (follow-up: align to `string | null` across API).
+
+**Tests & build:**
+- API test suite extended (parent validation, cycle guard, depth cap, promotion/demotion, already-seeded idempotency).
+- `npm run test:api` → 1268 passed. `npm run test -w @hb/web` → 1527 passed.
+- `npm run lint:api` → clean. `npm run build` → clean.
+
+**Code review outcome:** SHIP with 4 minor follow-ups noted (DTO parentId typing, reparent transactionality, form UX polish, depth-cap boundary edge cases).
+
+**Follow-ups:**
+- DTO `parentId: string | null` (currently `string | undefined`).
+- Reparent check optional transactionality guard if large-scale concurrent admin use emerges.
+- Form auto-exclude self + ancestors in dropdown (nice-to-have).
+
+**PR:** pending on batch branch feat/8QGKsOPB-taxonomy-theme-vendor-cart-batch.

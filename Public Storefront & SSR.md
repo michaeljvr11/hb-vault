@@ -413,3 +413,32 @@ endpoint, no migration.
 - Non-blocking follow-ups: a source-fetch failure during sitemap fan-out can get cached as "complete" for the full 15-minute TTL rather than retried sooner (worth a follow-up if a real API outage exposes it); sequential product-page fetches share one throttle-bucket IP with the deployed container, self-rate-limiting above roughly 12,000-product catalogue (not a regression, scaling note).
 
 **PR:** #90 (https://github.com/michaeljvr11/hb-mono-repo/pull/90) — branch `feat/ESMDKpTW-seo-prerender-fixes`, open, awaiting human merge.
+
+---
+
+## Implementation Notes — Cart with vendor grouping (card SVO-12, qWOUiFr5)
+
+**2026-09-28 — SHIPPED (batch on feat/8QGKsOPB-taxonomy-theme-vendor-cart-batch)**
+
+**What shipped:**
+- **`CartItemDto.vendor` field (new):** returns `{ id, businessName }` from the existing product join (single `SELECT` — no N+1). Populated on cart read/write.
+- **Cart grouping:** cart items now group by vendor **inside** currency groups. JSON shape: `{ [currency]: { [vendorId]: [CartItem[], ...], platform: [CartItem[], ...] } }`. Platform items (listing type 'platform' with no vendor) grouped under a `platform` key.
+- **Mixed-currency block message:** stays outside all vendor groups (no change to existing placement).
+- **No migration or `@hb/shared` contract change** — vendor field is a presentational addition; cart structure unchanged server-side.
+
+**Key decisions:**
+- Platform = "H&B" (label) grouped under key `platform` (technical).
+- Cart groups by vendor first, then by currency (per spec priority).
+- Vendor data from product join — no extra queries.
+
+**Tests & build:**
+- `npm run test:api` → 1268 passed. `npm run test -w @hb/web` → 1527 passed.
+- `npm run lint:api` → clean. `npm run build` → green (requires `INTERNAL_API_BASE_URL` env for SSR).
+
+**Code review outcome:** SHIP. No FAILs; one WARN (platform-label i18n) deferred.
+
+**Follow-ups:**
+- Checkout UI to render grouped vendor sections (separate card).
+- Vendor-specific shipping/fees (future extensibility point).
+
+**PR:** pending on batch branch feat/8QGKsOPB-taxonomy-theme-vendor-cart-batch.

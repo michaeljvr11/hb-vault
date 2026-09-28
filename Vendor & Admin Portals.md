@@ -375,3 +375,31 @@ Shipped via branch `feat/sKd1xhQl-vendor-orders-fulfilment` (2 commits, pending 
 **Back-office loading states hardened** (card I4RPWquJ / SVO-10): every in-flight `hourglass_empty` across admin + vendor-portal pages replaced with row skeletons matching real column counts (tables) or `app-state-message kind="loading"`; empty/error states moved to `app-state-message` with Try again / Clear filters (only when active) / Add actions; vendor-onboarding's two terminal "pending" hourglasses deliberately kept with comments.
 
 **Newsletter capture shipped** (card S3IEP59u): new `newsletter_subscribers` table (unique email, migration `1788604800000-NewsletterSubscribers`), public idempotent `POST /api/newsletter-subscribers` (ON CONFLICT DO NOTHING, normalized email, identical response for new/existing — no enumeration, throttled 5/min), admin `GET /api/admin/newsletter-subscribers` (paginated, newest first) and new `admin/newsletter` page; storefront "Join Community" form is a typed reactive form with plain opt-in copy. Capture-and-store only — no sending/unsubscribe yet; POPIA consent wording to be revisited before real sends. Admin Settings page gained the NAD-per-ZAR field. API 81 suites / 1133 tests, Web 98 files / 1491 tests, lint clean, full build green. PR pending.
+
+## Implementation Notes — Vendor application details (card 3nInXOrB)
+
+**2026-09-28 — SHIPPED (batch on feat/8QGKsOPB-taxonomy-theme-vendor-cart-batch)**
+
+**What shipped:**
+- **New vendor columns** (migration `1788691200000-VendorApplicationDetails`, all nullable): `businessDescription` (string, 20–1000 chars), `isRegisteredBusiness` (boolean), `registrationNumber` (string, required when `isRegisteredBusiness=true`), `productCategoryIds` (uuid array, 1–10 items, existence checked server-side), `contactName` (string), `contactPhone` (string with phone regex validation). All fields added to `CreateVendorRequest` and `UpdateVendorStatusRequest`.
+- **`@hb/shared` enum (new):** `CrossBorderIntent` = 'south_africa' | 'namibia' | 'both', added to vendor contracts.
+- **API validation:** `POST /vendors` (self-onboard) and `PATCH /vendors/:id` (admin review) validate character ranges and phone format server-side. Registration number existence validated; empty-string `registrationNumber` currently saved as-is (noted as follow-up).
+- **Admin vendor-review surface:** `/admin/vendors` displays new fields in the detail panel (`contactName`, `contactPhone` marked admin-only, never public). `contactPhone` omitted from public vendor DTO.
+- **Tests & build:** API 1268 passed, Web 1527 passed, lint clean, build clean.
+
+**Key decisions:**
+- All new fields nullable — backward-compatible with existing pending vendors.
+- Registration number required only when `isRegisteredBusiness=true` (conditional validation).
+- Product categories existence-checked server-side (1–10 items, valid UUIDs).
+- Contact phone is admin-only (never on public responses).
+- Cross-border intent stored but not yet used in business logic (future routing feature).
+
+**Code review outcome:** SHIP with 4 minor follow-ups noted (phone regex duplication on web, empty-string registrationNumber → null coercion, cross-border intent usage, category count boundary).
+
+**Follow-ups:**
+- Web form validation (phone regex, char limits) should mirror server-side; currently duplicated.
+- Empty-string `registrationNumber` should coerce to `null` for consistency.
+- Cross-border intent to gate shipping/tax logic (separate feature card).
+- Category count boundaries tested at edge (0, 11, invalid UUIDs).
+
+**PR:** pending on batch branch feat/8QGKsOPB-taxonomy-theme-vendor-cart-batch.
