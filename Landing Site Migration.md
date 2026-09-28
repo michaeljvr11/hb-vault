@@ -313,6 +313,10 @@ brand-name sweep to be unambiguous.
 - Mobile nav still hides marketing-page links (pre-existing structural limit; Home was already hidden). First batch to put real destinations behind the hidden footer.
 - No `replyTo` on the ops notification, so ops must copy the address out of the body. Follow-up.
 
+## Implementation Notes (2026-09-28) — LSM-5 Follow-up (bNO6ngdk)
+
+**Shipped: Admin read surface for contact_inquiries.** New `GET /api/admin/contact-inquiries?page=&limit=` on AdminController (class-level @Roles(ADMIN)). Newest first with id tiebreaker, default 20/page, limit clamped 1–100 never rejected, page floored at 1. InquiriesService.list mirrors NewsletterSubscribersService.list pattern; InquiriesModule exports the service; 5 unit tests. Shared contract: `AdminContactInquiryDto`, `ContactInquiryListQuery`, `ContactInquiryListDto` (`PagedResponse`); nullable phone/referenceNumber omitted (not null) on the wire. Web: `/admin/inquiries` admin-inquiries page mirroring admin-newsletter (AdminInquiriesService, nav item "Inquiries"). Markup: received label, name, email with mailto, type label (keyed by shared InquiryOrderType), phone, reference, expandable message (aria-expanded button, text-bound, never innerHTML). Known gap: page has no @Max limit on the query param (deliberate mirror of newsletter DTO same gap; fix both together if ever). Resolves LSM-5 "Nothing reads contact_inquiries" follow-up note.
+
 **Closes from earlier deferred:**
 - LSM-1/2/3 deferred `/contact` (LSM-4) — now built.
 - LSM-1/2/3 deferred nav/footer wiring + brand sweep (LSM-6) — now done. **Both statements in the earlier Implementation Notes section ("nav/footer still read 'H&B Market'" and "`/contact` is not built") are now false** — a deliberate record of what LSM-1/2/3 shipped, not corrected in place.

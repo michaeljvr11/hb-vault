@@ -268,6 +268,20 @@ Both raised as v2 card options, not specced or queued for implementation — mea
 - **[EDR-2](https://trello.com/c/4SOXI65Z)** — a composite `(status, createdAt)` index on `orders` would serve the actual earnings predicate (`status = 'delivered' AND createdAt BETWEEN`) better than the single-column index shipped here. Not a blocker; measure the query plan against real volume first.
 - **[EDR-3](https://trello.com/c/D9yNimAK)** — push the earnings aggregation into SQL instead of `getMany()` + in-JS reduce (Open Questions Q2 above). Deliberately gated: this is a rewrite of well-tested money code, and should only be picked up once a real dataset shows the indexed scan isn't enough — not on suspicion.
 
+## Implementation Notes (2026-09-28) — EDR-2 Resolution
+
+**RECOMMENDED CLOSE, no code.** Postgres 16 scratch schema (dev clone, 1M orders / ~2M order_items, ~70% vendor lines / 200 vendors). EXPLAIN (ANALYZE, BUFFERS) warm, best-of-3 runs on real query shapes.
+
+Scenario A (15% delivered): baseline vs composite `(status, createdAt)` on orders — earnings all-time admin 165→180ms, all-time vendor 15.4→15.8ms, 30d admin 96→80ms (best case -16ms), 30d vendor 14.7→11.1ms, platform GMV all-time 239→243ms, GMV 30d 71→80ms. Composite REPLACING `IDX_orders_createdAt` fails GMV 30d: 71→98ms (+39%, seq scan on orders) because `getPlatformListingGmv` filters `status != 'cancelled'` (not equality) and cannot use `(status, createdAt)` index — the card's premise (every earnings query filters `status='delivered'`) is false for GMV. Composite never replaces the single index.
+
+Scenario B (70% delivered): planner ignores the composite; all within noise. Earnings all-time admin ~897ms dominated by returning ~980k joined rows (EDR-3 territory: aggregation in JS via `getMany`, not an index problem).
+
+**Separate finding not addressed by this card:** `order_items.orderId` has NO index (only PK, productSizeId, vendorId); adding it took 30d admin earnings 96→34ms (-65%) at 1M orders, nothing for all-time. Not worth a migration at current volume (dev has 3 orders) but a bigger lever than the composite; flagged for future performance work.
+
+**Data-generation trap:** volatile expression in LATERAL subquery evaluated ONCE (every order got same item count/type) — derive from outer row id via `hashtext(o.id)` for stable variation per order.
+
+**Follow-ups recorded, not specced:** EDR-2 closed pending volume growth; EDR-3 remains gated on real dataset showing the indexed scan insufficient.
+
 ## Related
 
 - [[Vendor Earnings & Commission]] — the parent feature (VE-1 → VE-5)

@@ -796,3 +796,15 @@ doesn't depend on them can proceed in parallel.
 **Commission rate confirmed:** the live `commission_rates` table holds exactly one row — `15.00`, effective 2026-07-07, "Initial platform commission rate (provisional)" — so the **15%** published on the Vendor Agreement is the genuine in-force rate, not an assumption from the migration source. LC-7's acceptance criterion is met on evidence.
 
 **Open Questions status:** none resolved. Q1/Q3 (entity facts, Information Officer) remain load-bearing and now block sixteen placeholder tokens across seven published pages. Q6 (restricted/prohibited goods) and the Cross-Border & Customs open questions (courier, customs documentation, exporter of record) are now visible to customers as placeholder text on `/legal/customs` rather than silently absent. LC-1 is still the gate on all of it.
+
+## Implementation Notes (2026-09-28)
+
+**JToIJunP — Enable Caddy access logging.**
+
+Shipped: Caddyfile site-level `log` directive (stdout, JSON format via `format filter` wrapping json with iso8601 time + ms duration). Fields: `ts`, `method`, `uri`, `status`, `duration_ms`, `upstream`, `remote_ip`, `client_ip`, `user_agent`; `X-Forwarded-For` logged via `log_append xff`. Query VALUES for token/code/state redacted (reset-password, verify-email, OAuth callback); cookie SITE_GATE_SECRET and JWT Bearer in Authorization redacted. Skips `/api/health` and `/.well-known/acme-challenge/*`. Sink: stdout via Docker `json-file` driver with `logging: max-size 10m / max-file 5` (size-bound ~50MB, not time-bound, lost on caddy service definition change). Runbook: docs/runbooks/dev-server.md "Access log" section added with one-liner query. Verified: real caddy:2-alpine, all three branches (site, api, uploads) logged, secrets redacted, skips applied, ~120MB test load → 5 rotated files ~43MB.
+
+**POPIA implication — flagged but not resolved:** logs hold client IPs; retention is time-unbounded today (files rotate on size, not deletion). Prod needs deliberate TIME-bound retention policy before this pattern moves to live. Added as a follow-up; api/web/db/meilisearch still have unbounded json-file logs. OUT OF SCOPE for Caddy card: live on-box verification (one request of each kind, RenderMode.Server /shop showing one page entry + no /api/* entries) — a human merge is required.
+
+**49MKHEgy — /accept-terms copy fix.**
+
+Shipped: Generic interstitial copy ("We don't have a record of you agreeing to our terms yet…") replaces the false Google-specific claim ("signed in with Google"). `authGuard` routes ANY `null termsAcceptedAt` to `/accept-terms`, regardless of auth method (Google first login, email/password, seed admin, future paths). Audit of user-creation paths without `termsAcceptedAt`: `bootstrapAdmin` (auth.service ~241), `validateOAuthLogin` (by design, LC-9), seed admin; no admin-invite flow exists. `register()` records it. Bootstrap-admin still creates the account with null acceptance — functionally fine, the interstitial records it on first use. No behaviour change; comments corrected; spec asserts no "Google" and adds email/password case.
