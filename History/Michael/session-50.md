@@ -1,0 +1,8 @@
+# Session 50 — gwjmMnra, jh8htgd7, M2Ses1NH, uya5U4G8: Uploads Lifecycle Batch
+
+**Date:** 2026-09-29 · **Cards:** gwjmMnra (OPT-1), jh8htgd7 (198), M2Ses1NH (OPT-2), uya5U4G8 (OPT-3) · **Branch:** feat/jh8htgd7-uploads-lifecycle · **Status:** PR pending
+
+- **Shipped:** Four bundled cards: OPT-1 image cleanup on delete/replace + reconciliation sweep command, card 198 product image management (CRUD endpoints + shared web component for admin/vendor edit), OPT-2 Caddy serving /uploads with immutable caching headers, OPT-3 docker-compose logging caps + host journald size limit. All integrated; cleanup helper reused by 198's delete/replace; immutable caching depends on 198 minting new filenames on replace; runbook shared across OPT-2/3.
+- **Decisions:** Image deletion best-effort (log, never throw); filepath validation restrictive (plainfile-only, reject `..` and foreign origins); Caddy immutable header conditional on file existence (prevents 404 caching); dev-seed filenames excepted from immutable contract (rename if art changes); journald capped at 200M per VM.
+- **Tests:** api 89 suites / 1405 tests; web 103 files / 1565 tests; full build green; code-review found 2 blockers (UUID param validation, race on 8-image cap/primary — fixed in ef91ced), 5 non-blocking issues all addressed; regression: search-visibility spec lacked ImageFileCleanupService provider (fixed).
+- **Follow-ups:** run sweep dry-run on dev box post-deploy, then `--delete` after owner confirms, fill runbook before/after table; OPT-8 object-storage builds on cleanup helper; unapproved vendor 404 on update/create still unfixed (only new image routes patched); untracked seed-test-photos.ts uses fixed photo names, immutable caching will stale them (noted for art/preset changes).

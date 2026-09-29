@@ -203,7 +203,7 @@ Replaced the `admin/catalog` placeholder with a real screen at `apps/web/src/app
 
 Two sections behind a tab switcher: **Platform Listings** and **Categories**.
 
-**Listings:** list is a `computed()` filtered to `listingType === ListingType.PLATFORM` (vendor listings never shown). Create → `POST /products` (multipart image upload via existing disk-storage flow), edit → `PATCH /products/:id`, delete → `DELETE` with an inline two-step confirm. `vendorId` is never exposed or sent — the create/update payloads are explicit object literals that omit it; the server forces `listingType: 'platform'` for admins. (Note: the PATCH path does not handle image changes — only create uploads images.)
+**Listings:** list is a `computed()` filtered to `listingType === ListingType.PLATFORM` (vendor listings never shown). Create → `POST /products` (multipart image upload via existing disk-storage flow), edit → `PATCH /products/:id`, delete → `DELETE` with an inline two-step confirm. `vendorId` is never exposed or sent — the create/update payloads are explicit object literals that omit it; the server forces `listingType: 'platform'` for admins. Image management on edit (add/replace/delete/reorder/make-primary) shipped with card 198 (see [[Product Image Optimization Pipeline]] implementation notes).
 
 **Categories:** full CRUD via the admin category endpoints (`name`, `slug?`, `description?`, `displayOrder?`, `parentId?`).
 
@@ -259,7 +259,7 @@ Tests/review: web 119/119 pass, full SSR build clean (one non-blocking SCSS budg
 
 Replaced the `VendorProducts` placeholder at `apps/web/src/app/features/vendor/pages/vendor-products/` with a full CRUD screen. The component loads `GET /vendors/me` to resolve the authenticated vendor's ID, then filters `GET /products` client-side to show only that vendor's own listings (`product.vendor?.id === vendorId()`). This keeps the trust boundary on the server (ownership enforced by `ProductsService`) while providing an appropriate vendor-scoped UX.
 
-**Create flow:** form calls `POST /products` with no `vendorId` in the payload — the server's `createWithImages` resolves `vendorId` from the auth token and forces `listingType: 'vendor'`. Image upload via `multipart/form-data` (existing `FilesInterceptor` + `uploads/` disk-storage flow). **Edit flow:** `PATCH /products/:id` (no image changes, matching admin-catalog). **Delete:** `DELETE /products/:id` with 2-step inline confirm; failed deletes surface an error banner (code-review WARN addressed).
+**Create flow:** form calls `POST /products` with no `vendorId` in the payload — the server's `createWithImages` resolves `vendorId` from the auth token and forces `listingType: 'vendor'`. Image upload via `multipart/form-data` (existing `FilesInterceptor` + `uploads/` disk-storage flow). **Edit flow:** `PATCH /products/:id` with image management (add/replace/delete/reorder/make-primary via card 198 — see [[Product Image Optimization Pipeline]] implementation notes). **Delete:** `DELETE /products/:id` with 2-step inline confirm; failed deletes surface an error banner (code-review WARN addressed).
 
 Standalone, signals-based, SSR-safe component; styled to `docs/design/DESIGN.md` tokens; follows the merged `AdminCatalog` pattern exactly (drawer form, table, SCSS conventions). Categories loaded for the form from `GET /categories`.
 

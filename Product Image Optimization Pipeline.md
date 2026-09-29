@@ -114,7 +114,7 @@ uploads nothing to route through. See [[Landing Site Migration]].
 - Image editing UX (crop, rotate, reorder, re-upload). `PATCH /products/:id` still does
   not touch images.
 - Orphan-file cleanup on product delete. Already absent for single files; making it
-  correct for N derivatives is a separate, larger card.
+  correct for N derivatives is a separate, larger card. ([[Server Efficiency & Storage Optimization]] OPT-1 picked this up — shipped 2026-09-29.)
 - Moderation / approval of vendor imagery ([[Vendor Profile Customization]] open
   question — unchanged, still no gate).
 - Backfilling existing stored images — see open question 4.
