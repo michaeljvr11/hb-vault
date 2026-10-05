@@ -5,6 +5,7 @@ Status: **Spec'd 2026-10-05**. Cards are in Trello "To Do":
 - OT-2 `Z3gQhcTv` — admin Update tracking panel
 - OT-3 `HD13Bk1b` — customer tracker + deep link + copy
 - OT-4 `zSqz4wBg` — milestone emails (ship with or after OT-3, because the email links to its route)
+- OT-5 `25OQwbvD` — vendor tracking view (after OT-1)
 Related: [[Order State Machine]] · [[Cross-Border & Customs]] ·
 [[Transactional Email & Order Notifications]] · [[Vendor & Admin Portals]] ·
 [[Customer Profile]] · [[Vendor Earnings & Commission]] · [[Legal & Compliance Readiness]]
@@ -51,6 +52,8 @@ must still let a real courier adapter feed the same timeline later.
 | Customs reference | **Internal only.** Never in a customer DTO or email |
 | Vendor transitions | Vendors keep `processing` / `handed_to_hb`. The customer sees **both** as "Preparing" |
 | Admin override | Stays **correction-only**. It never sends tracking emails |
+| Courier details *(follow-up, same day)* | A courier partner is coming, but which one is unknown. The fields stay **generic**: courier name, tracking reference and tracking link. The admin decides whether to share them with the customer through a **"Share courier details with customer"** switch on the order. When it is on, they appear on the tracker and in every tracking email |
+| Vendor-facing tracking *(follow-up, same day)* | **In scope.** Vendors get a read-only tracker for orders containing their lines (OT-5) |
 
 ## Business rules
 
@@ -141,14 +144,23 @@ path appends one row:
   event at that stage that comes after the most recent visible event at an earlier
   stage. This means a re-entered stage after a correction shows its latest arrival.
 
-### R5 — Customer visibility
+### R5 — Customer and vendor visibility
 
-- The customer DTO and email carry: `TrackingStage`, steps with `reachedAt`,
-  `estimatedDeliveryDate`, `carrierName`, `trackingReference`, and visible event notes.
+- The customer-safe `OrderTrackingDto` and the email carry: `TrackingStage`, steps
+  with `reachedAt`, `estimatedDeliveryDate`, visible event notes, and courier details
+  **only when shared** (R7).
 - They **never** carry `customsReference`, the event `source`, the actor, override rows
   or `notifiedCustomer`.
-- The customer may read only their own order. Other users get 404, with no existence
-  leak, matching `findOneForUser`.
+- **Who may read `GET /orders/:id/tracking`:**
+  - the ordering customer;
+  - a vendor with at least one `order_items` line on the order (the same ownership check
+    as `assertActorMayTransition`);
+  - an admin.
+
+  Anyone else gets 404, with no existence leak.
+- **Vendors get the same customer-safe DTO**, so the R7 sharing switch applies to them
+  too. They do not get the customer's address or contact details through this endpoint.
+  The DTO carries none.
 
 ### R6 — Milestone emails
 
@@ -159,7 +171,8 @@ path appends one row:
   - a stage headline, e.g. "Your order #ab12cd34 is at the border";
   - the admin note, if there is one;
   - the estimated delivery date, if there is one;
-  - the carrier and tracking reference, if there are any;
+  - a courier block (carrier, tracking reference, and a "Track with <carrier>" `link`
+    when there is a URL), **only when `shareCourierDetails` is true** (R7);
   - a `link` block to `${APP_WEB_URL}/profile/orders/<id>`.
 - It **never** includes the customs reference or money figures beyond what TE-5
   already shows.
@@ -170,9 +183,34 @@ path appends one row:
   for a `confirmed` target. Override help text should say "use Update tracking for real
   progress".
 
+### R7 — Courier details and the admin sharing switch
+
+- The shipment row stores generic courier fields: `carrierName`, `trackingReference` and
+  `trackingUrl` (the courier's own tracking page). They make no assumption about which
+  courier is used.
+- `trackingUrl` must be an absolute `https://` URL, ≤ 500 chars. It is rendered only as
+  a link, never as raw HTML.
+- `shareCourierDetails` (boolean, **default false**) is a persistent setting on the
+  shipment that the admin controls:
+  - When it is false, `OrderTrackingDto` **omits all three courier fields** on the
+    server, and emails leave them out.
+  - When it is true, the customer tracker shows them, with a "Track with <carrier>"
+    button when there is a URL. Every tracking email from then on includes a courier
+    block.
+  - Admin DTOs always carry the fields and the switch.
+- The request field is optional: omit it to leave the setting unchanged. The admin
+  panel prefills the checkbox ON the first time courier details are entered, so the
+  common case takes one click. The admin can still untick it.
+- **Announcing courier details:** there is no dedicated "courier details added" email.
+  The admin sends one by posting the update (or a note-only update) with "Notify
+  customer" on, and the courier block rides along.
+- **Courier-ready:** a future courier adapter fills the same three fields
+  automatically. Sharing stays an admin decision.
+
 ## `@hb/shared` contract impact
 
-All additions; nothing existing changes shape except `OrderDto` gaining one field.
+All additions; nothing existing changes shape except `OrderDto` and
+`VendorOrderLineDto` each gaining one field.
 
 - `enums/tracking-stage.ts` — `TrackingStage`: `pending | confirmed | preparing |
   shipped | at_border | out_for_delivery | delivered | cancelled`.
@@ -187,30 +225,36 @@ All additions; nothing existing changes shape except `OrderDto` gaining one fiel
     note?: string; occurredAt: string }` (customer-safe)
   - `OrderTrackingDto { orderId; stage: TrackingStage; crossBorder: boolean;
     steps: TrackingStepDto[]; estimatedDeliveryDate?: string /* YYYY-MM-DD */;
-    carrierName?; trackingReference?; events: TrackingEventDto[] }`. Events are newest
-    first and visible only.
+    carrierName?; trackingReference?; trackingUrl?; events: TrackingEventDto[] }`.
+    Courier fields are present only when shared (R7). Events are newest first and
+    visible only.
   - `AdminTrackingEventDto extends TrackingEventDto { orderStatus: OrderStatus; source:
     TrackingEventSource; actorEmail?; visibleToCustomer: boolean; notifiedCustomer:
     boolean }`
   - `TrackingNextTargetDto { target: TrackingTarget; notifyByDefault: boolean }`
-  - `AdminOrderTrackingDto` — every `OrderTrackingDto` field, plus `shipmentStatus?`,
-    `customsReference?`, `nextTargets: TrackingNextTargetDto[]`, and
+  - `AdminOrderTrackingDto` — every `OrderTrackingDto` field (courier fields always
+    present when set), plus `shipmentStatus?`, `customsReference?`,
+    `shareCourierDetails: boolean`, `nextTargets: TrackingNextTargetDto[]`, and
     `events: AdminTrackingEventDto[]`. Events include hidden rows.
   - `AddTrackingUpdateRequest { target?: TrackingTarget; note?: string;
     estimatedDeliveryDate?: string; carrierName?: string; trackingReference?: string;
-    customsReference?: string; notifyCustomer: boolean }`. `notifyCustomer` is required
+    trackingUrl?: string; customsReference?: string; shareCourierDetails?: boolean;
+    notifyCustomer: boolean }`. `notifyCustomer` is required
     with no server default, following the override `sendNotifications` precedent: the web
     pre-fills it from `notifyByDefault`. A request with neither `target` nor `note` is
     invalid (400). Length limits: `note` ≤ 1000; `carrierName` / `trackingReference` /
-    `customsReference` ≤ 100. `estimatedDeliveryDate` must be an ISO date.
+    `customsReference` ≤ 100. `trackingUrl` must be `https://` and ≤ 500.
+    `estimatedDeliveryDate` must be an ISO date.
 - `OrderDto` gains `trackingStage: TrackingStage`. This lets list badges use
   customer-friendly labels without a second request.
+- `VendorOrderLineDto` gains `trackingStage: TrackingStage` (OT-5), for the same reason
+  on the vendor orders list.
 
 ### Endpoints
 
 | Method + path | Who | Body / response |
 |---|---|---|
-| `GET /orders/:id/tracking` | owning customer (and admin) | → `OrderTrackingDto` |
+| `GET /orders/:id/tracking` | owning customer, vendor with a line on the order (OT-5), admin | → `OrderTrackingDto` |
 | `GET /admin/orders/:id/tracking` | admin | → `AdminOrderTrackingDto` |
 | `POST /admin/orders/:id/tracking` | admin | `AddTrackingUpdateRequest` → `AdminOrderTrackingDto` |
 
@@ -222,8 +266,10 @@ All additions; nothing existing changes shape except `OrderDto` gaining one fiel
   nullable), `visibleToCustomer` (bool), `notifiedCustomer` (bool), `actorUserId` (FK
   `users`, nullable, `ON DELETE SET NULL`) and `occurredAt` (timestamptz). Plus an
   index on `(orderId, occurredAt)`.
-- `shipments` gains `estimatedDeliveryDate` (`date`, nullable) and `carrierName`
-  (varchar 100, nullable). It also gets a **unique index on `orderId`** (R2).
+- `shipments` gains `estimatedDeliveryDate` (`date`, nullable), `carrierName`
+  (varchar 100, nullable), `trackingUrl` (varchar 500, nullable) and
+  `shareCourierDetails` (boolean, not null, default false). It also gets a **unique
+  index on `orderId`** (R2).
 - Down must be symmetric. `synchronize` stays off.
 
 ## UI
@@ -234,7 +280,8 @@ All additions; nothing existing changes shape except `OrderDto` gaining one fiel
   - a radio/select of `nextTargets`, plus a "Note only" option;
   - an optional note;
   - an estimated delivery date picker, prefilled from the current value;
-  - carrier name and tracking reference fields;
+  - a **Courier details** group: carrier name, tracking reference, a tracking link,
+    and a **"Share courier details with customer"** checkbox (R7);
   - a customs reference field, shown only on cross-border orders and marked "internal";
   - a **"Notify customer by email"** checkbox, prefilled from `notifyByDefault` and
     re-prefilled when the target changes;
@@ -249,13 +296,22 @@ All additions; nothing existing changes shape except `OrderDto` gaining one fiel
     guard handles login via `returnUrl`.
   - A visual stepper: 6 steps cross-border, 5 domestic. Each step shows done/current/
     upcoming and its date.
-  - The estimated delivery date, carrier and tracking reference, plus an "Updates" list
-    of notes, newest first.
+  - The estimated delivery date and an "Updates" list of notes, newest first. When
+    courier details are shared, it also shows the carrier, the tracking reference and a
+    "Track with <carrier>" button (opens in a new tab, `rel="noopener noreferrer"`).
   - A pending banner ("Awaiting payment") and a cancelled banner.
   - The list badges use the `trackingStage` label.
 
   Styling follows the `docs/design/DESIGN.md` tokens. There is no Claude Design export
   for this screen; if the card wants one, it pulls the design via DesignSync first.
+- **Vendor** (`vendor-orders`, OT-5):
+  - The list gains a stage badge (`trackingStage`) and a "Track" action that opens a
+    deep-linkable `/vendor/orders/:orderId` detail.
+  - The detail shows the vendor's **own lines only** for that order, the same stepper
+    component the customer uses, the estimated delivery date, visible notes, and courier
+    details when shared.
+  - Existing vendor actions (`processing` / `handed_to_hb`) stay on the list.
+  - Vendors cannot post tracking updates.
 - **Copy:** `export-customs.html` §"Tracking your order through customs" now says
   customers can follow their order, including when it reaches the border, from their
   account. It no longer mentions asking support. The customs reference stays internal,
@@ -275,7 +331,9 @@ are needed. This spec does not touch the port.
   [[Order State Machine]].
 - Multiple shipments per order, and partial shipment or delivery.
 - SMS / WhatsApp / push notifications, and per-user notification preferences.
-- Vendor-facing tracking view or vendor emails for tracking stages.
+- Vendor **emails** for tracking stages (see Open questions). The vendor in-app view is
+  in scope (OT-5).
+- Vendors posting tracking updates. Only admins drive stages beyond `handed_to_hb`.
 - A public (logged-out) tracking page or tracking-number lookup.
 - A real courier adapter and automatic polling.
 - Backfilling timeline events for existing orders.
@@ -286,7 +344,10 @@ are needed. This spec does not touch the port.
    see nothing (the default in this spec) or a computed fallback? A fallback could come
    from the SVO-3 lead-time window plus the shipping-quote `estimatedDays`. **Default:
    nothing.** Revisit once SVO-3 ships.
-2. **Courier tracking reference visible to customers:** yes by default, so customers can
-   check with the courier themselves. Confirm.
+2. ~~Courier tracking reference visible to customers~~ — **resolved 2026-10-05:** it is
+   an admin choice per order via the sharing switch (R7).
 3. **Cancelled after shipping:** the state machine forbids it today. This spec does not
    change that.
+4. **Vendor tracking emails:** should vendors be emailed on any stage? A likely
+   candidate is **Delivered**, because it starts their payout clock ([[Vendor Earnings &
+   Commission]]). Not carded until the owner decides.
