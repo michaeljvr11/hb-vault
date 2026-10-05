@@ -19,6 +19,7 @@ pending → booked → in_transit → at_border → customs_cleared → out_for_
 
 - Never collapse the two countries into one "region" — every fulfilment record is explicitly tagged.
 - `customsReference` is required before a shipment can leave `at_border` (business rule — enforce when implementing border logic).
+- Border and customs tracking for customers: see [[Order Tracking]]. Customers see "At the border"; `customsReference` stays internal, and the tracking endpoint enforces it before `customs_cleared`.
 - Courier integration goes through the `SHIPPING_PROVIDER` port only (stub today, deliberate). One adapter class + one module line to add a real courier.
 
 ## TBD (ask a human)

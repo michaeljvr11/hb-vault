@@ -83,6 +83,8 @@ only when `sendNotifications` is true; the audit row records the override regard
 
 ## Coupled state machines
 
+> **v1 resolution (2026-10-05, [[Order Tracking]]):** one shipment per order (unique index). The order becomes `shipped` when its shipment enters `in_transit`, and `delivered` together with the shipment. Admins drive both through the tracking endpoint, which still uses `assertValidTransition` for every order write. Every status write path now appends an `order_tracking_events` row.
+
 One order may have multiple shipments (mixed platform/vendor lines — see [[Listing Types & Vendor Rules]]). Order status aggregates over its shipments:
 
 - Order is `shipped` when **all** its shipments are at least `in_transit` (DRAFT rule).
