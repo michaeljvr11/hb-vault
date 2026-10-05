@@ -6,6 +6,7 @@ Status: **Spec'd 2026-10-05**. Cards are in Trello "To Do":
 - OT-3 `HD13Bk1b` — customer tracker + deep link + copy
 - OT-4 `zSqz4wBg` — milestone emails (ship with or after OT-3, because the email links to its route)
 - OT-5 `25OQwbvD` — vendor tracking view (after OT-1)
+- OT-6 `qJrrBvaJ` — vendor "delivered" email (ship with or after OT-5, because the email links to its route)
 Related: [[Order State Machine]] · [[Cross-Border & Customs]] ·
 [[Transactional Email & Order Notifications]] · [[Vendor & Admin Portals]] ·
 [[Customer Profile]] · [[Vendor Earnings & Commission]] · [[Legal & Compliance Readiness]]
@@ -54,6 +55,8 @@ must still let a real courier adapter feed the same timeline later.
 | Admin override | Stays **correction-only**. It never sends tracking emails |
 | Courier details *(follow-up, same day)* | A courier partner is coming, but which one is unknown. The fields stay **generic**: courier name, tracking reference and tracking link. The admin decides whether to share them with the customer through a **"Share courier details with customer"** switch on the order. When it is on, they appear on the tracker and in every tracking email |
 | Vendor-facing tracking *(follow-up, same day)* | **In scope.** Vendors get a read-only tracker for orders containing their lines (OT-5) |
+| Vendor emails *(follow-up, same day)* | **Delivered only.** Each vendor on the order gets one email when it is delivered (R8) |
+| Estimated delivery date fallback *(follow-up, same day)* | Until an admin sets an exact date, show a **14–21 day window** from the order date. The window is stored as platform settings, not hard-coded (R9). A product-aware estimate built on the per-product delivery window from SVO-3 is **for later** |
 
 ## Business rules
 
@@ -207,6 +210,54 @@ path appends one row:
 - **Courier-ready:** a future courier adapter fills the same three fields
   automatically. Sharing stays an admin decision.
 
+### R8 — Vendor "delivered" email
+
+- A new `OrderEvents.DELIVERED { orderId }` is emitted after commit **only when the
+  conditional `deliveredAt` stamp actually writes a row**, i.e. the order's *first*
+  delivery. It fires on the admin tracking path (`delivered` target) and on
+  `PATCH /orders/:id/status`. It **never** fires on the override path, which stays
+  correction-only. This de-duplicates by construction: re-entering `delivered` after a
+  correction never re-emails, because `deliveredAt` is never cleared.
+- The listener sends **one email per distinct vendor** with lines on the order. It
+  resolves the address with the existing `VendorsService.resolveNotificationEmail` and
+  skips with a warning when none is found. Platform-only lines get no email.
+- Content:
+  - that vendor's own lines only (name, size, quantity, unit price, the same shape as
+    TE-4);
+  - the delivered date;
+  - one line about payout timing: eligible once the damage-claim window closes. Use
+    `DAMAGE_CLAIM_WINDOW_HOURS`, never a literal 48 ([[Vendor Earnings & Commission]]);
+  - a link to `${APP_WEB_URL}/vendor/orders/<orderId>` (OT-5).
+- It **never** carries commission or net-earnings figures, other vendors' lines,
+  customer contact or address, or the customs reference.
+- The send is best-effort and isolated per vendor (the `safely()` shape), so one vendor's
+  failure never blocks another's.
+- This is independent of the admin's "Notify customer" toggle: the toggle controls
+  customer email only.
+
+### R9 — Estimated delivery date: exact date or default window
+
+- If the admin has set `estimatedDeliveryDate`, that exact date is shown and emailed.
+- Otherwise, `OrderTrackingDto.estimatedDeliveryWindow = { earliest, latest }`. These
+  are `order.createdAt + deliveryEstimateDaysMin` / `+ deliveryEstimateDaysMax`, as
+  `YYYY-MM-DD` in Africa/Johannesburg (the same local day in Windhoek).
+- The window is present only while the stage is `confirmed` … `out_for_delivery`, and
+  never for `pending`, `delivered` or `cancelled`. Emails show the same value.
+- `deliveryEstimateDaysMin` / `Max` live in `platform_settings` (seeded **14 / 21**) and
+  are editable on the admin settings screen. Validation: integers, 1 ≤ min ≤ max ≤ 120.
+- The window is computed at read time from the current settings. Changing them shifts
+  the estimate on open orders. That is acceptable for v1 because no estimate is promised
+  at checkout today.
+- **Running late:** if today is past `latest` and the order isn't delivered, the customer
+  UI replaces the date range with reassuring copy, e.g. "Taking a little longer than
+  usual — we'll update you here". An admin note or exact date overrides it.
+- The window applies to cross-border and domestic orders alike in v1 (see Open
+  questions).
+- **Later, not carded:** once SVO-3 ships per-product delivery windows (a platform
+  default plus a per-product override), derive a product-aware estimate from the order's
+  lines. Take the slowest line's window plus a transit leg, and keep R9's settings as the
+  fallback.
+
 ## `@hb/shared` contract impact
 
 All additions; nothing existing changes shape except `OrderDto` and
@@ -225,8 +276,10 @@ All additions; nothing existing changes shape except `OrderDto` and
     note?: string; occurredAt: string }` (customer-safe)
   - `OrderTrackingDto { orderId; stage: TrackingStage; crossBorder: boolean;
     steps: TrackingStepDto[]; estimatedDeliveryDate?: string /* YYYY-MM-DD */;
+    estimatedDeliveryWindow?: { earliest: string; latest: string };
     carrierName?; trackingReference?; trackingUrl?; events: TrackingEventDto[] }`.
-    Courier fields are present only when shared (R7). Events are newest first and
+    Courier fields are present only when shared (R7). `estimatedDeliveryWindow` is
+    present only when there is no exact date (R9). Events are newest first and
     visible only.
   - `AdminTrackingEventDto extends TrackingEventDto { orderStatus: OrderStatus; source:
     TrackingEventSource; actorEmail?; visibleToCustomer: boolean; notifiedCustomer:
@@ -249,6 +302,10 @@ All additions; nothing existing changes shape except `OrderDto` and
   customer-friendly labels without a second request.
 - `VendorOrderLineDto` gains `trackingStage: TrackingStage` (OT-5), for the same reason
   on the vendor orders list.
+- `PlatformSettingsDto` and `UpdatePlatformSettingsRequest` gain
+  `deliveryEstimateDaysMin` / `deliveryEstimateDaysMax` (R9).
+- The API domain events `OrderEvents` gain `TRACKING_UPDATED` (R6) and `DELIVERED` (R8).
+  These are API-internal, not `@hb/shared`.
 
 ### Endpoints
 
@@ -270,6 +327,8 @@ All additions; nothing existing changes shape except `OrderDto` and
   (varchar 100, nullable), `trackingUrl` (varchar 500, nullable) and
   `shareCourierDetails` (boolean, not null, default false). It also gets a **unique
   index on `orderId`** (R2).
+- `platform_settings` gains `deliveryEstimateDaysMin` (int, not null, default 14) and
+  `deliveryEstimateDaysMax` (int, not null, default 21) (R9).
 - Down must be symmetric. `synchronize` stays off.
 
 ## UI
@@ -288,6 +347,8 @@ All additions; nothing existing changes shape except `OrderDto` and
   - a submit button guarded against double-submit;
   - the full timeline, including hidden override rows with their badges.
 
+  Admin **settings** gains a "Default delivery estimate (days)" min/max pair (R9).
+
   Two small fixes come with it: add a "Handed to HB" filter tab, and correct the
   humanised label to "Handed to HB". The override help text points real progress to
   this panel.
@@ -296,7 +357,9 @@ All additions; nothing existing changes shape except `OrderDto` and
     guard handles login via `returnUrl`.
   - A visual stepper: 6 steps cross-border, 5 domestic. Each step shows done/current/
     upcoming and its date.
-  - The estimated delivery date and an "Updates" list of notes, newest first. When
+  - The estimated delivery date: the exact date if set, otherwise the R9 window (e.g.
+    "Estimated delivery: 19 – 26 Oct"), otherwise the running-late copy. Also an
+    "Updates" list of notes, newest first. When
     courier details are shared, it also shows the carrier, the tracking reference and a
     "Track with <carrier>" button (opens in a new tab, `rel="noopener noreferrer"`).
   - A pending banner ("Awaiting payment") and a cancelled banner.
@@ -331,8 +394,8 @@ are needed. This spec does not touch the port.
   [[Order State Machine]].
 - Multiple shipments per order, and partial shipment or delivery.
 - SMS / WhatsApp / push notifications, and per-user notification preferences.
-- Vendor **emails** for tracking stages (see Open questions). The vendor in-app view is
-  in scope (OT-5).
+- Vendor emails for any stage other than **Delivered** (R8 covers Delivered).
+- A product-aware delivery estimate (waits on SVO-3; see R9 "Later").
 - Vendors posting tracking updates. Only admins drive stages beyond `handed_to_hb`.
 - A public (logged-out) tracking page or tracking-number lookup.
 - A real courier adapter and automatic polling.
@@ -340,14 +403,12 @@ are needed. This spec does not touch the port.
 
 ## Open questions (ask a human)
 
-1. **Estimated delivery date fallback:** before an admin sets a date, should the customer
-   see nothing (the default in this spec) or a computed fallback? A fallback could come
-   from the SVO-3 lead-time window plus the shipping-quote `estimatedDays`. **Default:
-   nothing.** Revisit once SVO-3 ships.
+1. ~~Estimated delivery date fallback~~ — **resolved 2026-10-05:** a 14–21 day default
+   window held in settings (R9). A product-aware estimate comes later, after SVO-3.
+   **Still open:** should domestic ZA orders get a shorter window than cross-border?
+   v1 uses one window for both.
 2. ~~Courier tracking reference visible to customers~~ — **resolved 2026-10-05:** it is
    an admin choice per order via the sharing switch (R7).
 3. **Cancelled after shipping:** the state machine forbids it today. This spec does not
    change that.
-4. **Vendor tracking emails:** should vendors be emailed on any stage? A likely
-   candidate is **Delivered**, because it starts their payout clock ([[Vendor Earnings &
-   Commission]]). Not carded until the owner decides.
+4. ~~Vendor tracking emails~~ — **resolved 2026-10-05:** Delivered only (R8, OT-6).
