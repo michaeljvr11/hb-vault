@@ -56,7 +56,8 @@ must still let a real courier adapter feed the same timeline later.
 | Courier details *(follow-up, same day)* | A courier partner is coming, but which one is unknown. The fields stay **generic**: courier name, tracking reference and tracking link. The admin decides whether to share them with the customer through a **"Share courier details with customer"** switch on the order. When it is on, they appear on the tracker and in every tracking email |
 | Vendor-facing tracking *(follow-up, same day)* | **In scope.** Vendors get a read-only tracker for orders containing their lines (OT-5) |
 | Vendor emails *(follow-up, same day)* | **Delivered only.** Each vendor on the order gets one email when it is delivered (R8) |
-| Estimated delivery date fallback *(follow-up, same day)* | Until an admin sets an exact date, show a **14–21 day window** from the order date. The window is stored as platform settings, not hard-coded (R9). A product-aware estimate built on the per-product delivery window from SVO-3 is **for later** |
+| Estimated delivery date fallback *(follow-up, same day)* | Until an admin sets an exact date, show a **route-based window from order confirmation**. Domestic (ZA→ZA or NA→NA): **7–14 days**. Cross-border: **14–28 days**, matching the published Shipping Policy; the owner first said 14–21, then chose 14–28 for consistency. Both windows are platform settings, not hard-coded (R9). A product-aware estimate is **for later** |
+| SVO-3 relationship *(follow-up, same day)* | SVO-3's per-product setting means **door-to-door delivery time**, the same concept as R9. There is **one** set of platform defaults: R9's settings, created by OT-1. SVO-3 is re-scoped to add only the per-product override and to render PDP / product card / checkout from data. **Ship the OT cards first, then SVO-3** |
 
 ## Business rules
 
@@ -239,24 +240,40 @@ path appends one row:
 
 - If the admin has set `estimatedDeliveryDate`, that exact date is shown and emailed.
 - Otherwise, `OrderTrackingDto.estimatedDeliveryWindow = { earliest, latest }`. These
-  are `order.createdAt + deliveryEstimateDaysMin` / `+ deliveryEstimateDaysMax`, as
-  `YYYY-MM-DD` in Africa/Johannesburg (the same local day in Windhoek).
+  are the **order confirmation time** + the **route's** min / max days, as `YYYY-MM-DD`
+  in Africa/Johannesburg (the same local day in Windhoek).
+  - **Domestic** (`originCountry === destinationCountry`, i.e. ZA→ZA or NA→NA):
+    `domesticDeliveryDaysMin` / `Max`, seeded **7 / 14**.
+  - **Cross-border:** `crossBorderDeliveryDaysMin` / `Max`, seeded **14 / 28**.
+- The confirmation time is the `occurredAt` of the order's `confirmed` tracking event,
+  falling back to `createdAt` for legacy orders with no events. This matches the
+  Shipping Policy wording "from order confirmation".
 - The window is present only while the stage is `confirmed` … `out_for_delivery`, and
   never for `pending`, `delivered` or `cancelled`. Emails show the same value.
-- `deliveryEstimateDaysMin` / `Max` live in `platform_settings` (seeded **14 / 21**) and
-  are editable on the admin settings screen. Validation: integers, 1 ≤ min ≤ max ≤ 120.
+- The four settings live in `platform_settings` and are editable on the admin settings
+  screen. Validation, per pair: integers, 1 ≤ min ≤ max ≤ 120. They are the **single
+  set of platform-wide door-to-door defaults**. SVO-3 must reuse them, not add its own.
 - The window is computed at read time from the current settings. Changing them shifts
   the estimate on open orders. That is acceptable for v1 because no estimate is promised
   at checkout today.
 - **Running late:** if today is past `latest` and the order isn't delivered, the customer
   UI replaces the date range with reassuring copy, e.g. "Taking a little longer than
   usual — we'll update you here". An admin note or exact date overrides it.
-- The window applies to cross-border and domestic orders alike in v1 (see Open
-  questions).
-- **Later, not carded:** once SVO-3 ships per-product delivery windows (a platform
-  default plus a per-product override), derive a product-aware estimate from the order's
-  lines. Take the slowest line's window plus a transit leg, and keep R9's settings as the
-  fallback.
+- **Published copy** (today hard-coded "14–28 days" for every route):
+  - OT-3 aligns it now with static text:
+    - Shipping Policy § "How long delivery takes": domestic 7–14 days, cross-border
+      14–28 days, both from order confirmation.
+    - Checkout domestic banner branch gains "Typically 7–14 days". The existing comment
+      about there being "no sourced domestic SLA" is now obsolete; the owner sourced it
+      on 2026-10-05.
+    - PDP door-stop detail covers both routes.
+  - Re-scoped SVO-3 later swaps the checkout and PDP strings for data.
+  - The Shipping Policy stays static legal copy. Whoever changes these settings away
+    from the seeds updates the policy page in the same change.
+- **Later, not carded:** once SVO-3 ships per-product door-to-door overrides, derive a
+  product-aware tracker estimate from the order's lines. Use the **slowest** line's
+  resolved window (product override → R9 route default), and keep R9's route default as
+  the fallback.
 
 ## `@hb/shared` contract impact
 
@@ -303,7 +320,8 @@ All additions; nothing existing changes shape except `OrderDto` and
 - `VendorOrderLineDto` gains `trackingStage: TrackingStage` (OT-5), for the same reason
   on the vendor orders list.
 - `PlatformSettingsDto` and `UpdatePlatformSettingsRequest` gain
-  `deliveryEstimateDaysMin` / `deliveryEstimateDaysMax` (R9).
+  `domesticDeliveryDaysMin` / `domesticDeliveryDaysMax` and `crossBorderDeliveryDaysMin`
+  / `crossBorderDeliveryDaysMax` (R9).
 - The API domain events `OrderEvents` gain `TRACKING_UPDATED` (R6) and `DELIVERED` (R8).
   These are API-internal, not `@hb/shared`.
 
@@ -327,8 +345,8 @@ All additions; nothing existing changes shape except `OrderDto` and
   (varchar 100, nullable), `trackingUrl` (varchar 500, nullable) and
   `shareCourierDetails` (boolean, not null, default false). It also gets a **unique
   index on `orderId`** (R2).
-- `platform_settings` gains `deliveryEstimateDaysMin` (int, not null, default 14) and
-  `deliveryEstimateDaysMax` (int, not null, default 21) (R9).
+- `platform_settings` gains `domesticDeliveryDaysMin` / `Max` (int, not null, defaults
+  7 / 14) and `crossBorderDeliveryDaysMin` / `Max` (int, not null, defaults 14 / 28) (R9).
 - Down must be symmetric. `synchronize` stays off.
 
 ## UI
@@ -347,7 +365,8 @@ All additions; nothing existing changes shape except `OrderDto` and
   - a submit button guarded against double-submit;
   - the full timeline, including hidden override rows with their badges.
 
-  Admin **settings** gains a "Default delivery estimate (days)" min/max pair (R9).
+  Admin **settings** gains a "Default delivery estimate (days)" group with two min/max
+  pairs: Domestic and Cross-border (R9).
 
   Two small fixes come with it: add a "Handed to HB" filter tab, and correct the
   humanised label to "Handed to HB". The override help text points real progress to
@@ -403,10 +422,12 @@ are needed. This spec does not touch the port.
 
 ## Open questions (ask a human)
 
-1. ~~Estimated delivery date fallback~~ — **resolved 2026-10-05:** a 14–21 day default
-   window held in settings (R9). A product-aware estimate comes later, after SVO-3.
-   **Still open:** should domestic ZA orders get a shorter window than cross-border?
-   v1 uses one window for both.
+1. ~~Estimated delivery date fallback~~ — **resolved 2026-10-05:** route-based default
+   windows held in settings (R9): domestic 7–14 days, cross-border 14–28. A
+   product-aware estimate comes later, after SVO-3.
+5. **SVO-3 per-product override shape** (for SVO-3's clarify step): does a product
+   override hold one window, or a domestic + cross-border pair? A product ships from one
+   origin to either route. Ask when SVO-3 is picked up.
 2. ~~Courier tracking reference visible to customers~~ — **resolved 2026-10-05:** it is
    an admin choice per order via the sharing switch (R7).
 3. **Cancelled after shipping:** the state machine forbids it today. This spec does not
