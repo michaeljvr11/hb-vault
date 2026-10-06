@@ -403,3 +403,7 @@ Shipped via branch `feat/sKd1xhQl-vendor-orders-fulfilment` (2 commits, pending 
 - Category count boundaries tested at edge (0, 11, invalid UUIDs).
 
 **PR:** pending on batch branch feat/8QGKsOPB-taxonomy-theme-vendor-cart-batch.
+
+## Implementation Notes — Vendor order tracking read view (card OT-5 / 25OQwbvD, 2026-10-06)
+
+**Related work:** [[Order Tracking]] OT-5 ships the read-only order tracker for vendors. Vendor orders list now displays `trackingStage` badge (replaces raw-status pill) and a deep-linkable "Track" action → `/vendor/orders/:orderId` detail. The detail shows the vendor's own lines only, timeline steps, shared courier details (when enabled), and order-level notes. Reuses the customer tracking stepper component and `delivery-estimate.ts` moved to shared. Fixed responsive overflow at 375px. Shipped on branch `feat/zSqz4wBg-order-tracking-notifications`, PR pending.

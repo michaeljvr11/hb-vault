@@ -1,12 +1,12 @@
 # Order Tracking
 
-Status: **Spec'd 2026-10-05**. OT-1/2/3 implemented on branch `feat/EUy8sgIY-order-tracking` (PR pending). OT-4/5/6 in To Do.
-- OT-1 `EUy8sgIY` — API foundation (blocks the rest) ✓ implemented (PR pending)
-- OT-2 `Z3gQhcTv` — admin Update tracking panel ✓ implemented (PR pending)
-- OT-3 `HD13Bk1b` — customer tracker + deep link + copy ✓ implemented (PR pending)
-- OT-4 `zSqz4wBg` — milestone emails (ship with or after OT-3, because the email links to its route)
-- OT-5 `25OQwbvD` — vendor tracking view (after OT-1)
-- OT-6 `qJrrBvaJ` — vendor "delivered" email (ship with or after OT-5, because the email links to its route)
+Status: **Spec'd 2026-10-05**. OT-1/2/3 shipped via PR #116 (merged to main). OT-4/5/6 implemented on branch `feat/zSqz4wBg-order-tracking-notifications` (PR #117).
+- OT-1 `EUy8sgIY` — API foundation (blocks the rest) ✓ shipped (PR #116)
+- OT-2 `Z3gQhcTv` — admin Update tracking panel ✓ shipped (PR #116)
+- OT-3 `HD13Bk1b` — customer tracker + deep link + copy ✓ shipped (PR #116)
+- OT-4 `zSqz4wBg` — milestone emails (ship with or after OT-3, because the email links to its route) ✓ implemented (PR #117)
+- OT-5 `25OQwbvD` — vendor tracking view (after OT-1) ✓ implemented (PR #117)
+- OT-6 `qJrrBvaJ` — vendor "delivered" email (ship with or after OT-5, because the email links to its route) ✓ implemented (PR #117)
 Related: [[Order State Machine]] · [[Cross-Border & Customs]] ·
 [[Transactional Email & Order Notifications]] · [[Vendor & Admin Portals]] ·
 [[Customer Profile]] · [[Vendor Earnings & Commission]] · [[Legal & Compliance Readiness]]
@@ -436,10 +436,10 @@ are needed. This spec does not touch the port.
 
 ## Implementation Notes (OT-1, OT-2, OT-3 — 2026-10-06)
 
-**Branch:** `feat/EUy8sgIY-order-tracking` · **PR:** pending · **Cards:** [OT-1](https://trello.com/c/EUy8sgIY) · [OT-2](https://trello.com/c/Z3gQhcTv) · [OT-3](https://trello.com/c/HD13Bk1b)
+**Branch:** `feat/EUy8sgIY-order-tracking` · **PR:** #116 (merged to main) · **Cards:** [OT-1](https://trello.com/c/EUy8sgIY) · [OT-2](https://trello.com/c/Z3gQhcTv) · [OT-3](https://trello.com/c/HD13Bk1b)
 
 **OT-1 (API):**
-- `@hb/shared` gains `TrackingStage`, `TrackingTarget`, `TrackingEventSource` enums and the `contracts/tracking.ts` suite (`OrderTrackingDto`, `AdminOrderTrackingDto`, `AddTrackingUpdateRequest`, etc.). `OrderDto.trackingStage` added; `VendorOrderLineDto.trackingStage` added for OT-5.
+- `@hb/shared` gains `TrackingStage`, `TrackingTarget`, `TrackingEventSource` enums and the `contracts/tracking.ts` suite (`OrderTrackingDto`, `AdminOrderTrackingDto`, `AddTrackingUpdateRequest`, etc.). `OrderDto.trackingStage` added; `VendorOrderLineDto.trackingStage` added in OT-5.
 - Migration `1788777600000-OrderTracking`: `order_tracking_events` table with `(orderId, occurredAt)` index, `shipments` gains courier/estimate/sharing columns and a UQ index on `orderId`, platform_settings seeded with 7/14 domestic and 14/28 cross-border days.
 - `OrderTrackingService` in orders module: R1 stage derivation and R4 event appending in `order-tracking.util.ts`. R3 coupled writes locked via `pessimistic_write`. Lazy shipment creation uses INSERT … ON CONFLICT DO NOTHING.
 - `AdminOrderTrackingController` in orders module (to avoid cyclic imports) with `POST /admin/orders/:id/tracking` and `GET /admin/orders/:id/tracking`.
@@ -478,3 +478,34 @@ are needed. This spec does not touch the port.
 - OT-4 (emails) and OT-5/6 next.
 - Dev-server CSP/proxy fix.
 - `admin-orders.scss` budget warning (2.1 kB over, down from 2.7).
+
+## Implementation Notes (OT-4, OT-5, OT-6 — 2026-10-06)
+
+**Branch:** `feat/zSqz4wBg-order-tracking-notifications` · **PR:** [#117](https://github.com/michaeljvr11/hb-mono-repo/pull/117) · **Cards:** [OT-4](https://trello.com/c/zSqz4wBg) (customer emails) · [OT-5](https://trello.com/c/25OQwbvD) (vendor tracker) · [OT-6](https://trello.com/c/qJrrBvaJ) (vendor delivered email)
+
+**OT-4 (customer milestone emails):**
+- New `OrderTrackingNotificationsListener` on `OrderEvents.TRACKING_UPDATED`, best-effort safe shape (never throws; missing order/user/event → warning).
+- Email subject/headline per milestone: shipped / at the border / out for delivery / delivered; all others are generic "Update on your order #x".
+- Fixed review findings: email kind now derived from the update's `target` (carried on event), not guessed by diffing snapshots — resolves misfires when lazy shipment creation or equal timestamps occurred. Estimate (exact date or R9 window) shown only for stages confirmed…out_for_delivery, gated on DTO stage not email kind.
+- New `OrderTrackingService.getCustomerTracking(orderId)` feeds the listener, customer-safe DTO with no ownership check, estimates/courier logic centralized.
+
+**OT-5 (vendor read-only tracker):**
+- API: `GET /orders/:id/tracking` now admits vendor with ≥1 `order_items` line via new private `vendorHasLine` check; same customer-safe DTO. `VendorOrderLineDto.trackingStage` added to `@hb/shared` as required field, populated from one batched shipment query (no N+1).
+- Web: vendor orders list shows stage badge (replaces raw-status pill) and per-row Track link (aria-label "Track order #<8 chars>"). New deep-linkable route `/vendor/orders/:orderId` shows vendor's own lines only (filtered client-side, never full-order fetch), shared `app-tracking-stepper`, estimate, notes, courier when shared, friendly not-found (read-only). `delivery-estimate.ts` moved to `apps/web/src/app/shared/` for reuse (customer + vendor).
+- Fixed at 375px: pill + Track link + action button overflowed card (363px vs 351px). Fixed with `flex-wrap` on `.order-row__side`.
+
+**OT-6 (vendor delivered email):**
+- `OrderEvents.DELIVERED { orderId }` emitted after commit only when conditional `deliveredAt` UPDATE reports affected === 1 (first delivery only). Fired from `OrderTrackingService.addUpdate` (delivered target) and `OrdersService.updateStatus`; never from `overrideStatus`.
+- `OrderDeliveredNotificationsListener`: one email per distinct vendor (own lines only with sizeLabel), resolved via `VendorsService.resolveNotificationEmail` (warning when none), platform-only lines skipped, per-vendor `safely()` isolation. `MailService.sendVendorOrderDelivered`: delivered date (en-ZA, Africa/Johannesburg), payout line built from `DAMAGE_CLAIM_WINDOW_HOURS` (no literal 48), link `/vendor/orders/<id>`, no commission/customer/customs data.
+
+**Tests & review:** API 1717 tests (100 suites), Web 1661 tests (108 files), lint clean, full build green. Code-reviewer verdict: fix-first on three OT-4 defects (all fixed); delivered-stamp refactor, `overrideStatus`, vendor read authorization, link/route matches, data-leak checks passed.
+
+**Spec clarifications & caveats (v1 behaviour):**
+- DELIVERED and TRACKING_UPDATED remain best-effort with no retry (same caveat as `order.paid`).
+- Formatter hook re-indented transaction callbacks in `orders.service.ts` / `order-tracking.service.ts` (diffs larger than logical change).
+- v1 caveats N1–N3 (above) still apply.
+
+**Follow-ups:**
+- Shared tracking-panel component for customer + vendor pages (candidate cleanup).
+
+## Open questions (ask a human)

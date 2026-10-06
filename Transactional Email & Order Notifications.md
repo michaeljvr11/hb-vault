@@ -388,6 +388,9 @@ Throws `NotFoundException` only if vendor id doesn't exist.
 - Customer notification (TE-5) backfilled as follow-up rather than pre-planned, narrowing the original feature scope.
 - Money formatting: `.toFixed(2)` applied at render time, not at DB layer (audit preservation — stored value unchanged).
 
+**Related work (Order Tracking phase, 2026-10-06):**
+- [[Order Tracking]] OT-4 (customer milestone emails on `OrderEvents.TRACKING_UPDATED`) and OT-6 (vendor "delivered" email on `OrderEvents.DELIVERED`) reuse the template and `MailService` infrastructure built here, with specialized `sendCustomerTrackingUpdate()` and `sendVendorOrderDelivered()` methods.
+
 ---
 
 ## Open questions (a human should answer before `/ship-card`)
