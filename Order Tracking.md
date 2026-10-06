@@ -1,9 +1,9 @@
 # Order Tracking
 
-Status: **Spec'd 2026-10-05**. Cards are in Trello "To Do":
-- OT-1 `EUy8sgIY` — API foundation (blocks the rest)
-- OT-2 `Z3gQhcTv` — admin Update tracking panel
-- OT-3 `HD13Bk1b` — customer tracker + deep link + copy
+Status: **Spec'd 2026-10-05**. OT-1/2/3 implemented on branch `feat/EUy8sgIY-order-tracking` (PR pending). OT-4/5/6 in To Do.
+- OT-1 `EUy8sgIY` — API foundation (blocks the rest) ✓ implemented (PR pending)
+- OT-2 `Z3gQhcTv` — admin Update tracking panel ✓ implemented (PR pending)
+- OT-3 `HD13Bk1b` — customer tracker + deep link + copy ✓ implemented (PR pending)
 - OT-4 `zSqz4wBg` — milestone emails (ship with or after OT-3, because the email links to its route)
 - OT-5 `25OQwbvD` — vendor tracking view (after OT-1)
 - OT-6 `qJrrBvaJ` — vendor "delivered" email (ship with or after OT-5, because the email links to its route)
@@ -433,3 +433,48 @@ are needed. This spec does not touch the port.
 3. **Cancelled after shipping:** the state machine forbids it today. This spec does not
    change that.
 4. ~~Vendor tracking emails~~ — **resolved 2026-10-05:** Delivered only (R8, OT-6).
+
+## Implementation Notes (OT-1, OT-2, OT-3 — 2026-10-06)
+
+**Branch:** `feat/EUy8sgIY-order-tracking` · **PR:** pending · **Cards:** [OT-1](https://trello.com/c/EUy8sgIY) · [OT-2](https://trello.com/c/Z3gQhcTv) · [OT-3](https://trello.com/c/HD13Bk1b)
+
+**OT-1 (API):**
+- `@hb/shared` gains `TrackingStage`, `TrackingTarget`, `TrackingEventSource` enums and the `contracts/tracking.ts` suite (`OrderTrackingDto`, `AdminOrderTrackingDto`, `AddTrackingUpdateRequest`, etc.). `OrderDto.trackingStage` added; `VendorOrderLineDto.trackingStage` added for OT-5.
+- Migration `1788777600000-OrderTracking`: `order_tracking_events` table with `(orderId, occurredAt)` index, `shipments` gains courier/estimate/sharing columns and a UQ index on `orderId`, platform_settings seeded with 7/14 domestic and 14/28 cross-border days.
+- `OrderTrackingService` in orders module: R1 stage derivation and R4 event appending in `order-tracking.util.ts`. R3 coupled writes locked via `pessimistic_write`. Lazy shipment creation uses INSERT … ON CONFLICT DO NOTHING.
+- `AdminOrderTrackingController` in orders module (to avoid cyclic imports) with `POST /admin/orders/:id/tracking` and `GET /admin/orders/:id/tracking`.
+- `capturePayment`, `updateStatus`, `overrideStatus` now append tracking events inside a transaction with row-level write lock on re-read to prevent stale `deliveredAt` stamps.
+- `GET /orders/:id/tracking` (owner or admin; vendor read is OT-5).
+- API 1625 tests pass, lint clean.
+
+**OT-2 (admin):**
+- New **Update tracking** panel in admin order detail, rendered above the override section.
+- Offers only `nextTargets` from the server; skips `nextTargets` if none available.
+- Review fix: loads with notify OFF so courier changes alone don't advance the order; re-defaults `notifyByDefault` on target pick.
+- Share-courier checkbox prefilled ON on first entry.
+- Delivery-estimate min/max pairs added to admin settings.
+- Tab added for "Handed to HB" filter; label corrected.
+- Stale-response guard and double-submit lock.
+- Web 1642 tests pass before review fixes; touched specs (161) re-pass after.
+
+**OT-3 (customer):**
+- New deep-linkable `/profile/orders/:id` route with R9 delivery-window branches and delivery-late reassurance copy.
+- Visual stepper component (presentational, reused by OT-2) with `aria-current="step"`, UTC+2 timestamps, vertical below 640px.
+- Courier block shown only when shared; Updates list newest first.
+- Pending banner replaces the stepper.
+- Page SCSS restored after move; copy aligned with Shipping Policy (7–14 domestic, 14–28 cross-border) and checkout/PDP.
+- Full build green.
+
+**Spec clarifications (v1 behaviour, documented):**
+- **N1:** an exact `estimatedDeliveryDate` cannot be cleared once set; the DTO rejects `''` and the picker skips emptied values, so orders cannot fall back to the R9 window.
+- **N2:** note-only and courier-only updates are accepted on pending, cancelled and delivered orders, emitting `TRACKING_UPDATED` when notify is on; OT-4 listener must handle cancelled targets.
+- **N3:** an override from `delivered` back to `shipped` leaves the shipment at `delivered`, so the panel offers no next target and the admin must override a second time to exit `delivered`.
+
+**Verification gap:**
+- Browser check (cross-border/domestic screenshots at 375px) not yet done.
+- Dev login blocked on main by SEC-5 CSP (`connect-src 'self'` vs dev `http://localhost:3000/api`); separate fix task raised; not from this batch.
+
+**Follow-ups:**
+- OT-4 (emails) and OT-5/6 next.
+- Dev-server CSP/proxy fix.
+- `admin-orders.scss` budget warning (2.1 kB over, down from 2.7).
