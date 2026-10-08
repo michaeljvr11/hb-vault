@@ -62,6 +62,31 @@ results are engine-backed it does.
 4. **Accepted behaviour change.** Meilisearch matches words, prefixes and near-typos, not arbitrary substrings. A search
    for "shirt" will no longer return "Tshirt". The dropdown already behaves this way, so the two now agree.
 
+## Synonyms for vendors and categories (added 2026-10-08, confirmed by Michael)
+
+Admin-configured synonyms must reach the **Vendors** and **Categories** rows of the dropdown too, not just products.
+Example: an admin saves the group *clothes <-> clothing*; typing "clothes" must list the "Clothing" category row.
+
+Why it needs its own work: those two groups are not in Meilisearch. `SearchService.suggestVendors` /
+`suggestCategories` are Postgres `ILIKE '%q%'` queries, and the admin-editable synonym table
+(`Synonym` entity, `SynonymsService`) is only ever pushed into the Meilisearch index settings via
+`buildMeilisearchSynonymsMap`. So the synonym map has one consumer today, and the two Postgres groups need a second.
+
+Approach (SRCH-5):
+- Reuse the **same** `buildMeilisearchSynonymsMap` output (one mapper, no drift): it already encodes `enabled`,
+  `bidirectional` and sibling equivalents. Do not reimplement the rules.
+- Expand the typed term into itself plus its mapped equivalents, then match any of them with `ILIKE` on
+  `category.name` and on `vendor.businessName` / `vendor.tradingName`. Approved-only vendor filter and the 5-per-group cap are unchanged.
+- Match the whole typed term (trimmed, case-insensitive) against a synonym key, the same way the engine treats it.
+  Prefix-of-a-key matching while mid-word ("clothe" -> clothing) is **not** included; the engine does not do it either.
+- Keep an in-process copy of the map so a suggest request (one per debounced keystroke) does not hit the synonym table
+  every time; invalidate it on admin create/update/delete, with a short TTL as a safety net.
+- Bound the expansion (a small cap on terms) and escape `%`, `_` and `\` in every term, so a typed `%` cannot match everything.
+- Admin screen copy states that synonyms apply to products, vendors and categories.
+
+Enter-key results are already covered: product search (SRCH-1) matches `categoryNames` and `businessName` through the
+engine, whose synonyms the admin already controls.
+
 ## Business rules it must honour
 
 - **Approved-vendor visibility** ([[Listing Types & Vendor Rules]], card #36). The engine filter already applies
@@ -91,16 +116,16 @@ results are engine-backed it does.
 | SRCH-2 | Discover: relevance sort when a term is searched | web | SRCH-1 | `lVX3EMus` |
 | SRCH-3 | Opt-in suggest-vs-results parity check against a live stack | api tooling | SRCH-1 | `GR9GDcEn` |
 | SRCH-4 | Refresh a category's products in the index when it is renamed | api | — (do before or with SRCH-1) | `GAqT32Hx` |
+| SRCH-5 | Admin synonyms apply to the Vendors and Categories dropdown rows | api + admin copy | — | `GLIk2ojj` |
 
-Order: SRCH-4 and SRCH-1 in parallel → SRCH-2 → SRCH-3. SRCH-1 + SRCH-2 are a natural pair for one `/ship-batch`
+Order: SRCH-4, SRCH-1 and SRCH-5 are independent and can run in parallel → SRCH-2 → SRCH-3. SRCH-1 + SRCH-2 are a natural pair for one `/ship-batch`
 (one branch, one PR); SRCH-4 is independent and small.
 
 ## Out of scope
 
 - A facet/filter UI on `/discover` (price range, vendor, category facets). `GET /search` already supports them; separate card when wanted.
-- Making the *Vendors* and *Categories* dropdown rows synonym- and typo-aware. They are Postgres `ILIKE` and do not know
-  the synonym map, so a synonym of a category name will not produce a category row, only product rows. Not what Josh
-  reported; flagged as a possible follow-up.
+- Typo tolerance for the *Vendors* and *Categories* dropdown rows. They stay Postgres `ILIKE`; only **synonyms** are added
+  to them (SRCH-5). Typos on those two groups are not addressed.
 - Retiring the `ILIKE` branch. It stays as the outage fallback (decision 2).
 - Canonical-product / buy-box grouping (still deferred, #51).
 - Real ranking signals (`sales_velocity`, `vendor_rating`) — still reserved no-ops.
