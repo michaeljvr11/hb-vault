@@ -78,7 +78,8 @@ Approach (SRCH-5):
 - Expand the typed term into itself plus its mapped equivalents, then match any of them with `ILIKE` on
   `category.name` and on `vendor.businessName` / `vendor.tradingName`. Approved-only vendor filter and the 5-per-group cap are unchanged.
 - Match the whole typed term (trimmed, case-insensitive) against a synonym key, the same way the engine treats it.
-  Prefix-of-a-key matching while mid-word ("clothe" -> clothing) is **not** included; the engine does not do it either.
+  Matching while the shopper is still mid-word ("clothe" -> clothing) is delivered by SRCH-6 through the **same map**
+  (derived prefix keys), so this helper needs no prefix logic of its own.
 - Keep an in-process copy of the map so a suggest request (one per debounced keystroke) does not hit the synonym table
   every time; invalidate it on admin create/update/delete, with a short TTL as a safety net.
 - Bound the expansion (a small cap on terms) and escape `%`, `_` and `\` in every term, so a typed `%` cannot match everything.
@@ -86,6 +87,39 @@ Approach (SRCH-5):
 
 Enter-key results are already covered: product search (SRCH-1) matches `categoryNames` and `businessName` through the
 engine, whose synonyms the admin already controls.
+
+## Synonyms should fire while the shopper is still typing (added 2026-10-08, SRCH-6)
+
+**Ask.** Product "Tennis Balls", admin group *tennis balls <-> racket balls*. Typing "tennis" finds it. Typing "racket"
+(or "racket b") does not; it only appears once the full phrase "racket balls" is typed. The dropdown is search-as-you-type,
+so the synonym should work on a partial entry too.
+
+**Research (Meilisearch v1.15.2, the version prod pins; verified against a throwaway container, not the dev index).**
+- Meilisearch already treats the *last* query word as a prefix, but it looks synonyms up only for a **complete** term of
+  1-3 words that equals a synonym key. The docs are silent on prefixes; the behaviour below was measured.
+- Measured: with the group above, `tennis balls` returns the product, while `tennis b` / `tennis ba` do not, and
+  `racket` / `racket b` / `racket ba` do not return a "Tennis Balls" product either. Same for `clothe` vs `clothes`.
+- Docs facts that constrain the design: synonyms are fetched only for search terms of 1-3 words; the literal query always
+  outranks its synonyms; one-way synonyms stay one-way.
+
+**Options weighed.**
+1. **Derive prefix keys into the synonym map (chosen).** `buildMeilisearchSynonymsMap` also emits a key for each
+   prefix of every key (min length 3 characters, keys of at most 3 words), pointing at the same equivalents. Measured:
+   after adding them, `racket`, `racket b` and `racket ba` all return "Tennis Balls". Cost: about 9 extra keys per 12-char
+   term (2 groups -> 18 keys; roughly 1,000 keys at 100 groups), which Meilisearch handles easily and which are never stored
+   in Postgres or shown in the admin screen. It fixes products, and (through SRCH-5's helper reading the same map)
+   vendors and categories, in one place. Sorting, filters, facets and paging keep working because it is still one plain query.
+2. **Query-time expansion with Meilisearch federated multi-search (rejected).** Search the typed text plus the equivalents of
+   any key it prefixes, merged by relevance. It works for relevance order, filters and offset/limit, but the merge **ignores
+   per-query `sort`** (measured: `createdAt:desc` came back in relevance order), so price and newest sorts would be wrong,
+   and it costs extra engine calls and code in three places.
+
+**Known trade-offs (state them, do not hide them).**
+- Typing the first word of a multi-word key ("racket") now also surfaces products matching its equivalents ("tennis balls").
+  That is the ask, but it is a recall-over-precision choice.
+- Literal matches still rank high but synonym-only matches can interleave with them, and a very short prefix ("rac") can rank
+  the synonym match first. A minimum prefix length of 3 is the recommended floor; 4 is stricter (open question below).
+- The dropdown shows at most 5 products; if 5 literal matches exist, a synonym-only product shows on Enter, not in the box.
 
 ## Business rules it must honour
 
@@ -118,7 +152,9 @@ engine, whose synonyms the admin already controls.
 | SRCH-4 | Refresh a category's products in the index when it is renamed | api | — (do before or with SRCH-1) | `GAqT32Hx` |
 | SRCH-5 | Admin synonyms apply to the Vendors and Categories dropdown rows | api + admin copy | — | `GLIk2ojj` |
 
-Order: SRCH-4, SRCH-1 and SRCH-5 are independent and can run in parallel → SRCH-2 → SRCH-3. SRCH-1 + SRCH-2 are a natural pair for one `/ship-batch`
+| SRCH-6 | Synonyms fire while the shopper is still typing (derived prefix keys) | api | — (SRCH-5 picks it up for free) | `g56dzKWt` |
+
+Order: SRCH-4, SRCH-1, SRCH-5 and SRCH-6 are independent and can run in parallel → SRCH-2 → SRCH-3. SRCH-1 + SRCH-2 are a natural pair for one `/ship-batch`
 (one branch, one PR); SRCH-4 is independent and small.
 
 ## Out of scope
@@ -137,3 +173,5 @@ Order: SRCH-4, SRCH-1 and SRCH-5 are independent and can run in parallel → SRC
    or hydrate the capped hit set and sort it in Postgres. SRCH-1 recommends the sortable attribute but must verify that
    Meilisearch's string ordering is case-insensitive enough to match what shoppers expect; if not, fall back to the
    Postgres sort for that one case.
+3. SRCH-6 minimum prefix length: 3 characters (more forgiving, more noise) or 4 (stricter). Recommendation: 3, kept as one
+   named constant so it can be tuned from real catalogue data after launch.
