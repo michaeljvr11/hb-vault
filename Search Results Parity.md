@@ -175,3 +175,62 @@ Order: SRCH-4, SRCH-1, SRCH-5 and SRCH-6 are independent and can run in parallel
    Postgres sort for that one case.
 3. SRCH-6 minimum prefix length: 3 characters (more forgiving, more noise) or 4 (stricter). Recommendation: 3, kept as one
    named constant so it can be tuned from real catalogue data after launch.
+
+
+## Implementation Notes (2026-10-08)
+
+**Shipped:** one bundled branch `feat/F4OMk15F-search-results-parity`, one PR. Commits: `6d2a011` SRCH-6, `f507042` SRCH-1, `cf5b243` SRCH-5, `4ae493c` SRCH-2, `3f1c4b0` review fixes. **PR:** [#119](https://github.com/michaeljvr11/hb-mono-repo/pull/119). Cards: [SRCH-1](https://trello.com/c/F4OMk15F), [SRCH-2](https://trello.com/c/lVX3EMus), [SRCH-5](https://trello.com/c/GLIk2ojj), [SRCH-6](https://trello.com/c/g56dzKWt). SRCH-3 and SRCH-4 are not in this batch.
+
+### SRCH-1 — `GET /products?q=` on the engine
+
+- `ProductsService.findAll` with a non-blank trimmed `q` calls `ProductSearchService.searchProductIds`. Meilisearch is paged with `page` / `hitsPerPage`, so `total` is the exact engine count, capped by `maxTotalHits` (1000).
+- One Postgres `find` re-applies the platform OR approved-vendor predicate, reorders rows to engine rank and drops ids that are missing. `total` is the engine count, so a page can be shorter than `limit`.
+- Only the engine call falls back to ILIKE, with a warning. Hydration errors surface. The ILIKE fallback now escapes `%`, `_` and `\`.
+- `ProductSort` gained `relevance`. Without `q` it behaves as `newest`. An omitted `sort` with `q` means `newest` server-side, so the web sends `sort=relevance`.
+- Open question 2 (name sort) resolved: `name` is in the index `sortableAttributes` (one line in `6d2a011`). Checked on a throwaway Meilisearch v1.15 container: `name:asc` is case-insensitive and accent-folded (`10 pack, 2 pack, Apple, apricot, banana, cherry, eagle, Émile, Zebra`).
+- Settings are re-applied on API boot. Each environment needs one restart (or reindex) before `sort=name` with `q` works. Until then Meilisearch rejects the sort and the request falls back to ILIKE with a warning.
+- Known inconsistency: engine price sorts group by currency, then `effectivePrice`. The q-less and ILIKE path sorts on base `price` with no currency grouping.
+
+### SRCH-6 — derived prefix synonym keys
+
+- `buildMeilisearchSynonymsMap` emits a key for each prefix of every key. Constants in `search.constants.ts`: `MIN_SYNONYM_PREFIX_LENGTH` = 3, `MAX_SYNONYM_KEY_WORDS` = 3, `SYNONYM_MAP_WARN_KEYS` = 5000.
+- Real keys win over derived ones. Output is sorted, so it is deterministic. The mapper collapses inner whitespace and sorts equivalents.
+- `applySettings` logs a warning above 5000 keys and applies the map anyway.
+- The map is `Map`-based, so terms such as `constructor` and `__proto__` work (review fix in `3f1c4b0`).
+- Open question 3 resolved: 3 characters, confirmed by Michael.
+- **Trade-off (raised in review, accepted):** derived prefixes also fire for finished short words. `carpet <-> rug` makes `car` return rugs; `red bush <-> rooibos` makes `red` return rooibos. Meilisearch cannot tell a half-typed word from a finished one. Intended per spec. Tune `MIN_SYNONYM_PREFIX_LENGTH` from real catalogue data after launch.
+
+### SRCH-5 — admin synonyms on the Vendors and Categories rows
+
+- New `SynonymExpansionService`. It reads the same mapper output through `SynonymsService.getCachedMeilisearchSynonymsMap`, so there is one mapper.
+- In-process cache with a 60 s TTL (`SYNONYM_MAP_CACHE_TTL_MS`). A generation counter stops an in-flight load from overwriting a newer invalidation. Admin create, update and delete invalidate the cache before the Meilisearch reload. Other API instances see an edit only after the TTL.
+- Term cap 10 per expansion. Terms are matched with `ILIKE ANY(patterns)` on `category.name`, `vendor.businessName` and `vendor.tradingName`. `%`, `_` and `\` are escaped, so a typed `%` no longer matches every row.
+- If the synonym lookup fails, results fall back to un-expanded. The approved-only vendor filter and the 5-per-group cap are unchanged.
+- Admin screen copy says synonyms apply to products, vendors and categories.
+- Partial typing on these rows comes from SRCH-6's derived keys. No prefix logic lives in this helper.
+
+### SRCH-2 — Discover relevance default
+
+- With `q` set and no `?sort=`, `/discover` uses `relevance`. With no `q`, the default stays `newest`.
+- A stale `?sort=relevance` without a term is treated as `newest`.
+- Choosing Relevance drops the `sort` param. Clearing the term, or taking a Categories suggestion, drops a dead `sort=relevance`.
+- The Relevance option is shown only when a term is present.
+
+### Live verification (dev stack, 2026-10-08)
+
+- `redbush`, `redb`, `red bu` and `red bush t` each return "HB Rooibos & Honeybush Gift Set" from both `GET /products?q=` and `GET /search/suggest` (existing group rooibos <-> redbush, red bush tea).
+- Category-name search (`beauty`) and a typo (`ceramc`) return products on Enter.
+- Temporary groups: Categories and Vendors rows expand by synonym, including partial typing (`zz-cosm` -> Health & Beauty), case-insensitively. A typed `%%` matches no vendor or category row. The temporary rows were deleted afterwards.
+- The SRCH-6 "tennis balls" check used the existing rooibos group, not a new product.
+- ILIKE ANY was verified on real Postgres, not only in the fake query builder.
+- Discover checked at phone width and 1280 px: no hydration warnings. Only the expected anonymous `/api/auth/refresh` 401.
+
+### Tests at ship time
+
+- api 101 suites / 1781 tests. web 108 files / 1673 tests. `lint:api` clean. Build green (web build needs `INTERNAL_API_BASE_URL` set).
+
+### Not done / follow-ups
+
+- SRCH-3 (parity script, `GR9GDcEn`) not shipped. Its defaults for `racket`, `racket b` and `racket ba` are still to add.
+- SRCH-4 (category rename reindex, `GAqT32Hx`) not in this batch. A renamed category keeps stale indexed `categoryNames` until the 03:00 reindex, so category-name results can lag.
+- Reviewer's optional cleanups, not taken: fold `SynonymExpansionService` into `SearchService`; drop the `dropRelevanceSort` helper in `discover.ts`.

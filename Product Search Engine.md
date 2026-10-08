@@ -281,3 +281,11 @@ Recommended order: 1 → 2 → (3, 5 parallel) → 4 → 6. Card 7 is backlog, n
 ## Follow-up (2026-10-08)
 
 QA found the results page never moved to the engine: [[Search Results Parity]] (cards SRCH-1..4) finishes open question 5 by making `GET /products?q=` engine-backed, and fixes category renames not reaching the index.
+
+
+## Implementation Notes — Search Results Parity (2026-10-08)
+
+- Open question 5 is closed. Storefront results are engine-backed: `GET /products?q=` asks Meilisearch for ranked ids, then hydrates from Postgres (`ProductsService.findAll` → `ProductSearchService.searchProductIds`). The ILIKE path stays as the outage fallback and is not retired.
+- `name` is a sortable attribute. Existing environments need one API restart to apply it.
+- Synonyms reach the Vendors and Categories suggest rows through the same mapper (`SynonymExpansionService`). Partial typing comes from derived prefix keys (`MIN_SYNONYM_PREFIX_LENGTH` = 3).
+- Full notes, trade-offs and live checks: [[Search Results Parity]].
