@@ -231,6 +231,38 @@ Order: SRCH-4, SRCH-1, SRCH-5 and SRCH-6 are independent and can run in parallel
 
 ### Not done / follow-ups
 
+- Update 2026-10-15: SRCH-3 and SRCH-4 shipped. See [[#Implementation Notes (2026-10-15)]]. The bullets below are kept as written on 2026-10-08.
 - SRCH-3 (parity script, `GR9GDcEn`) not shipped. Its defaults for `racket`, `racket b` and `racket ba` are still to add.
 - SRCH-4 (category rename reindex, `GAqT32Hx`) not in this batch. A renamed category keeps stale indexed `categoryNames` until the 03:00 reindex, so category-name results can lag.
 - Reviewer's optional cleanups, not taken: fold `SynonymExpansionService` into `SearchService`; drop the `dropRelevanceSort` helper in `discover.ts`.
+
+## Implementation Notes (2026-10-15)
+
+**Shipped:** SRCH-4 and SRCH-3 on branch `feat/GR9GDcEn-search-parity-check-category-reindex-delivery-window`, bundled in one PR with SVO-3 (own commits, see [[Order Tracking]]). Commits: `422ebb5` SRCH-4, `c422695` SRCH-3, `92b7a9b` review fixes, `bc5e0d7` evidence. **PR:** [#122](https://github.com/michaeljvr11/hb-mono-repo/pull/122). Cards: [SRCH-3](https://trello.com/c/GR9GDcEn) · [SRCH-4](https://trello.com/c/GAqT32Hx).
+
+### SRCH-4 — category rename reindex
+
+- `CategoriesService.update` emits `category.updated` after a successful save, only when `name` changed. A re-parent does not emit. The emit is after the save, not in a transaction, so there is no emit-before-commit window.
+- `SearchIndexerService.handleCategoryUpdated` finds the category's product ids, reloads them with the same relations as the other handlers, and writes one `addDocuments` batch. The reload is two-step: filtering on the `categories` join would hydrate only the matching category and truncate each document's other `categoryNames`.
+- `categoryNames` holds direct links only, so a parent rename reaches only products linked directly to it.
+- Engine failure is logged, not thrown. The test asserts the log.
+- Known limit: the batch is unpaged. The full reindex pages in 500s. Fine at the current catalogue size.
+
+### SRCH-3 — `npm run search:parity`
+
+- `scripts/search-parity.js` with `search-parity-lib.js`, unit tests under `node --test` (9 tests), and default terms in `search-parity-terms.json`. Read-only, GET only.
+- Usage: `npm run search:parity -- [--base-url=<url>] ["term" ...]`. Positional terms replace the defaults.
+- Per term it compares `GET /search/suggest` product ids with `GET /products?q=&limit=100&sort=relevance`. Exit 1 names the term and the missing ids. Exit 2 means the API is unreachable.
+- `expectCategory` checks the Categories group. `expectSuggestions: true` makes zero suggestions a failure. A term with zero suggestions is reported VACUOUS, which is visibly not a pass.
+- `SEARCH_PARITY_COOKIE` passes the dev box access gate. It is never printed, and multi-line values are rejected. Documented in `docs/runbooks/dev-server.md` ("Search parity check").
+- Not wired into CI on purpose. It needs a live Meilisearch stack.
+- The racket terms (`racket`, `racket b`, `racket ba`) and a Tennis Balls product are not in seed or dev data. They report VACUOUS until created in the admin.
+- Live run on the local stack, 2026-10-15: 6 passed, 0 failed, 3 vacuous.
+
+### Tests at ship time (whole batch)
+
+- api 102 suites / 1832 tests. web 109 files / 1711 tests. `lint:api` clean. Build green (web build needs `INTERNAL_API_BASE_URL` set). `node --test scripts/search-parity-lib.test.js` 9/9.
+
+### Follow-ups
+
+- Pre-existing, not from this batch: the web `toFormData` helper drops `currency`, `originCountry` and the three discount fields on image uploads. A create-with-images from the web form falls back to server defaults for those. A correctness bug for NAD and Namibia-origin products. Needs its own card.

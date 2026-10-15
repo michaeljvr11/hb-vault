@@ -267,11 +267,11 @@ path appends one row:
       about there being "no sourced domestic SLA" is now obsolete; the owner sourced it
       on 2026-10-05.
     - PDP door-stop detail covers both routes.
-  - Re-scoped SVO-3 later swaps the checkout and PDP strings for data.
+  - SVO-3 (2026-10-15) swapped the checkout and PDP strings for data.
   - The Shipping Policy stays static legal copy. Whoever changes these settings away
     from the seeds updates the policy page in the same change.
-- **Later, not carded:** once SVO-3 ships per-product door-to-door overrides, derive a
-  product-aware tracker estimate from the order's lines. Use the **slowest** line's
+- **Later, not carded:** SVO-3 shipped its per-product overrides on 2026-10-15. The
+  product-aware tracker estimate is still not built. Derive it from the order's lines. Use the **slowest** line's
   resolved window (product override → R9 route default), and keep R9's route default as
   the fallback.
 
@@ -414,7 +414,7 @@ are needed. This spec does not touch the port.
 - Multiple shipments per order, and partial shipment or delivery.
 - SMS / WhatsApp / push notifications, and per-user notification preferences.
 - Vendor emails for any stage other than **Delivered** (R8 covers Delivered).
-- A product-aware delivery estimate (waits on SVO-3; see R9 "Later").
+- A product-aware delivery estimate (SVO-3 shipped 2026-10-15; the estimate is not built, see R9 "Later").
 - Vendors posting tracking updates. Only admins drive stages beyond `handed_to_hb`.
 - A public (logged-out) tracking page or tracking-number lookup.
 - A real courier adapter and automatic polling.
@@ -425,9 +425,9 @@ are needed. This spec does not touch the port.
 1. ~~Estimated delivery date fallback~~ — **resolved 2026-10-05:** route-based default
    windows held in settings (R9): domestic 7–14 days, cross-border 14–28. A
    product-aware estimate comes later, after SVO-3.
-5. **SVO-3 per-product override shape** (for SVO-3's clarify step): does a product
-   override hold one window, or a domestic + cross-border pair? A product ships from one
-   origin to either route. Ask when SVO-3 is picked up.
+5. ~~SVO-3 per-product override shape~~ — **resolved 2026-10-15 (owner):** a domestic +
+   cross-border pair. Four nullable columns on `products`, named as the R9 settings. Each
+   route falls back on its own to the R9 default. No second set of platform defaults.
 2. ~~Courier tracking reference visible to customers~~ — **resolved 2026-10-05:** it is
    an admin choice per order via the sharing switch (R7).
 3. **Cancelled after shipping:** the state machine forbids it today. This spec does not
@@ -507,5 +507,24 @@ are needed. This spec does not touch the port.
 
 **Follow-ups:**
 - Shared tracking-panel component for customer + vendor pages (candidate cleanup).
+
+## Implementation Notes (SVO-3 — 2026-10-15)
+
+**Card:** [SVO-3](https://trello.com/c/DGOzcuyq) (per-product door-to-door delivery override) · **Branch:** `feat/GR9GDcEn-search-parity-check-category-reindex-delivery-window` · **PR:** [#122](https://github.com/michaeljvr11/hb-mono-repo/pull/122). Bundled with SRCH-3/SRCH-4 by owner request. Own commits: `491cb33` api + shared, `56f989f` web, `92b7a9b` review fixes.
+
+- Owner decision (2026-10-15, resolves open question 5): the override is a domestic + cross-border pair. It uses the same four names as the R9 settings. Each route falls back on its own to the R9 default. There is no second set of platform defaults.
+- Migration `1788864000000-ProductDeliveryWindow`: four nullable int columns on `products`. CHECKs require each pair to be both null or both set, and 1 ≤ min ≤ max ≤ 120. Symmetric down. Verified on the dev DB: run, revert, run.
+- `@hb/shared`: optional fields on `ProductDto` and `CartItemDto`. `ProductUpdateRequest` takes `number | null` for the four keys. New `PublicDeliverySettings` holds only the four defaults. `PlatformSettingsDto` is unchanged.
+- Write rule: admin only. A non-admin who sends any of the four keys, even null, gets a 403 before any write (`ProductsService.assertAdminOnlyDeliveryWindow`). The DTO checks integers, 1..120, min ≤ max, and pairs.
+- Public `GET /settings/delivery` (`@Public`, `PublicDeliverySettingsController`, on the public-routes allowlist) returns the four defaults only. A test asserts `notificationEmails` is absent.
+- Web resolver: `apps/web/src/app/shared/delivery-window.ts`. `DeliverySettingsService` fetches the defaults once per browser session, so a default change shows after reload.
+- Checkout uses the slowest cart line for the fee's route. If any line is unresolved (defaults failed and no override), the day count is dropped rather than guessed.
+- PDP shows both routes, origin first. The product card shows no delivery time. The vendor product form has no delivery inputs and never sends the keys.
+- Admin catalog form: "Delivery window (days, door to door)". Review fix: create-with-images now sends the keys.
+- Shipping Policy page stays static legal copy (R9).
+- The R9 "Later" product-aware tracker estimate is still not built. It should reuse the slowest-line rule above.
+- Live check: a temporary dev override showed "2–5 days within South Africa · 10–20 days to Namibia" on the PDP, then was cleared. No hydration warnings.
+
+**Follow-up:** the web `toFormData` helper also drops `currency`, `originCountry` and the three discount fields on image uploads. This predates the batch. It needs its own card.
 
 ## Open questions (ask a human)

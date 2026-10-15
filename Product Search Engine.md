@@ -289,3 +289,4 @@ QA found the results page never moved to the engine: [[Search Results Parity]] (
 - `name` is a sortable attribute. Existing environments need one API restart to apply it.
 - Synonyms reach the Vendors and Categories suggest rows through the same mapper (`SynonymExpansionService`). Partial typing comes from derived prefix keys (`MIN_SYNONYM_PREFIX_LENGTH` = 3).
 - Full notes, trade-offs and live checks: [[Search Results Parity]].
+- SRCH-4 (2026-10-15): renaming a category emits `category.updated`, which re-upserts that category's products into the index in one batch. Fixes the stale `categoryNames` gap. See [[Search Results Parity]].
