@@ -442,3 +442,28 @@ endpoint, no migration.
 - Vendor-specific shipping/fees (future extensibility point).
 
 **PR:** pending on batch branch feat/8QGKsOPB-taxonomy-theme-vendor-cart-batch.
+
+## Implementation Notes — 2026-10-20 (SVO-14 + self-hosted fonts)
+
+**Status:** In review · Branch: `feat/gxMLsjiq-contrast-gate-fonts-slim-images` · [PR #124](https://github.com/michaeljvr11/hb-mono-repo/pull/124)
+
+**SVO-14 (gxMLsjiq) — static contrast gate, tier 1 only:**
+- `docs/design/DESIGN.md` gains a marker-delimited "Contrast pairs (CI-checked)" table (48 pairs). It is the single source of pairs.
+- `scripts/check-contrast.mjs` is zero-dep Node (about 0.2 s). It resolves each token from `apps/web/src/styles.scss` in light (`:root`) and dark (`@mixin hb-dark-tokens`). Dark inherits light. `var()` aliases resolve per theme.
+- Translucent foregrounds are composited. Translucent backgrounds are refused. SCSS `//` comments are stripped. The script throws if a `--hb-*` token is set in a dark block outside the mixin.
+- Failures name the pair, both theme ratios and the threshold. Thresholds: 4.5 for text, 3 for `--hb-outline` (input border, non-text).
+- Scripts: `npm run check:contrast` and `npm run test:contrast` (12 `node:test` cases). CI step "Contrast gate (design tokens)" sits in the `gates` job of `ci.yml`. All 48 pairs pass today.
+- Documented non-pairs (below threshold, kept out of the table): `--hb-primary` text on `--hb-surface-container` (4.41); `--hb-secondary-700` text on `-container-high` / `-highest` (4.47 / 4.23, light); `--hb-secondary` as any foreground (2.70).
+- DESIGN.md prose corrected: primary-700 is 5.5:1 or better on every light surface (was "6.1:1+").
+- **Caveat:** the GitHub plan cannot make `gates` a required check. A red gate blocks images and deploy on `main`, but not the merge button. The human reviewer is the merge gate.
+- Tier 2 (nightly real-browser `contrast.mjs`) is not built.
+
+**Self-hosted web fonts (qxdF3zoY):**
+- `apps/web/src/fonts.css` holds the `@font-face` rules. Inter comes from `@fontsource-variable/inter` 5.3.0 (latin and latin-ext). Material Symbols comes from `@fontsource-variable/material-symbols-outlined` 5.3.9, `full` four-axis build, so `'FILL' 1` still renders filled. Both are OFL-1.1.
+- Font packages are web devDependencies. Fonts are copied into `dist` at build time. `fonts.css` is listed before `styles.scss` in `angular.json`.
+- Google Fonts links and preconnects removed from `index.html`.
+- `buildCsp()` in `server.ts`: `style-src 'self' 'nonce-…'`, `font-src 'self'`. Google origins dropped; the spec asserts it.
+- `optimization.fonts` re-enabled. It is a no-op now, per card AC.
+- `inlineCritical` stays `false`. Beasties emits `<link media="print" onload="this.media='all'">` on prerendered (`/about`) and SSR (`/login`) routes. Angular's CSP-aware variant only triggers when `ngCspNonce` is in the DOM at render time. `patchHtmlResponse` stamps the nonce after render, and prerender has no nonce. A nonce-only `script-src` then blocks the onload handler and the page renders unstyled. Rationale is in the `buildCsp()` doc comment.
+- Verified in a browser against the production SSR build: zero Google requests. Fonts load from `/media/*.woff2` with `Cache-Control: public, max-age=31536000`. Inter 48 KB; icons 4.0 MB, the same bytes Google served, so no added cost. FILL icons render. No CSP violations on SSR or prerendered routes.
+- Web tests: 109 files / 1715 pass.

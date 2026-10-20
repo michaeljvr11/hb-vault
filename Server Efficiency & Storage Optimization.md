@@ -104,3 +104,18 @@ Related: PROD-2 (backups). The `uploads` volume is not in PROD-2's scope today a
 - **(b) Semaphore bounds libvips work but not queued multer buffers.** The semaphore gates concurrent `sharp.process()` calls but not the `memoryStorage` upload buffers (up to 5 MB each) waiting in the queue. Queue depth is unbounded.
 
 **NOT DONE (awaits deployed dev-box image):** The card's acceptance criteria require before/after `docker stats` peak/settled measurements for a scripted burst of 5 parallel 8-image product creates, and in-container `/proc/1/maps` check on the running api to verify jemalloc. Acceptance items for these stay open. Optional follow-up: document the four env vars (`SHARP_CACHE_MEMORY_MB`, `SHARP_CACHE_ITEMS`, `SHARP_CONCURRENCY`, `IMAGE_PROCESS_MAX_CONCURRENT`) in `docker-compose.prod.yml`, `.env.example`, and the runbook (defaults apply if unset).
+
+## Implementation Notes — 2026-10-20 (OPT-6 shipped)
+
+**Status:** In review · Branch: `feat/gxMLsjiq-contrast-gate-fonts-slim-images` · [PR #124](https://github.com/michaeljvr11/hb-mono-repo/pull/124)
+
+**OPT-6 (qamP5k8h) — Per-app slim images and keep-last-N retention:**
+- New `prod-deps` stage in `apps/api/Dockerfile` and `apps/web/Dockerfile`. It strips `devDependencies` from all four manifests, then runs `npm install --omit=dev --workspace=@hb/<app>`. The runtime stage copies `node_modules` from that stage. The builder's `npm ci` still validates the lockfile.
+- Why not `npm ci --omit=dev --workspace` alone: lockfile dev flags are global, so cross-workspace dev tools stayed in as "prod".
+- Measured locally (Docker 29.5.3). api 408 → 368 MB (node_modules 233 → 176 MB; no `@angular`). web 413 → 287 MB (node_modules 233 → 73 MB; no sharp, typeorm, `@nestjs/typescript`, prettier or `@fontsource`).
+- `typescript` and `prettier` stay in the api image through real runtime edges: typeorm to its ts-node peer, and resend to `@react-email/render`.
+- Verified locally: api migrations (`node dist/database/migrate.js`, 31 ran on a scratch DB); `/api/health` 200; compose healthcheck command exit 0; sharp 0.35.3 loads and encodes WebP; jemalloc in `LD_PRELOAD` and the process maps; web `/shop` SSR with `ng-server-context`.
+- `infra/deploy.sh`: `docker image prune -af --filter until=168h` replaced by `prune_old_images`. It keeps the newest **5** distinct images per `ghcr.io/${IMAGE_REPO}/{api,web}` by creation time, plus any image a container uses. `:latest` shares the SHA's image, so it costs no slot. Removes with `docker rmi` (no `-f`), then a plain dangling prune. Best-effort (`|| true`).
+- `infra/test-prune-images.sh` exercises the pruning against a local daemon (PASS).
+- Runbook `docs/runbooks/dev-server.md` states N=5 in the deploy summary and under "If the image is not on the box". Disk bullet is now about 0.65 GB per deploy. Unused third-party images are no longer swept. Remove them by hand with `docker rmi`, not `docker image prune -a`, which would delete rollback images.
+- Not verified: a real box deploy (dev or prod VM), and the CI run itself.
