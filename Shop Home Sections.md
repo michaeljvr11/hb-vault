@@ -125,6 +125,7 @@ eye against the live page.
 | SHS-4 | mETkwXkj | "Made in Namibia" and "From South Africa" shelves | SHS-2 |
 | SHS-5 | ABB1gwlR | Category shelves for the top 2 categories (optional) | SHS-2 |
 | SHS-6 | vEJI4mGQ | Server-side shelf filters (onSale, inStock, originCountry, minRating, rating/discount sorts) to lift the 100-product ceiling; not needed pre-launch (open question 4) | SHS-3/4/5 |
+| SHS-7 | 5AhR9PHK | Shelf "View all" links open a filtered `/discover` (On sale, Top rated, origin shelves are unfiltered today); `/discover` reads the SHS-6 filters and shows them as chips | SHS-6 |
 
 SHS-1 and SHS-2 can ship in parallel; SHS-3/4/5 each touch `shop.html`/`shop.ts`, so they go one at a time
 (or as one `/ship-batch`) after SHS-2.
