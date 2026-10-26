@@ -107,10 +107,7 @@ eye against the live page.
    reviews). A single 5★ review will top the shelf; raise the minimum to 3 reviews once volume exists.
 3. **Duplicates across shelves.** Default: no dedupe (a product may appear in New in Namibia and On sale).
    With a tiny catalogue the shelves will overlap heavily; the ≥4 rule hides the thin ones.
-4. **100-product ceiling.** Client-derivation only sees the 100 newest products, so "On sale"/"Top rated"
-   can miss older qualifying items once the catalogue passes ~100. Follow-up when that happens: add
-   `onSale=true` and a rating sort to `ProductQuery` (shared contract + API + migration-free), then each
-   shelf fetches its own `limit=8`. Not needed pre-launch.
+4. **100-product ceiling.** *Decided 2026-10-26: one endpoint call, not seven.* Client-derivation only sees the 100 newest products, so "On sale"/"Top rated" can miss older qualifying items once the catalogue passes ~100. SHS-6 adds a single public shelves endpoint (every shelf in one response, rules applied server-side) built on new reusable `ProductQuery` filters (`onSale`, `inStock`, `originCountry`, `minRating`) and rating/discount sorts, and the web drops its client-side derivations. One round trip and one throttle hit per visit. Not needed pre-launch.
 5. **Hero magnitude.** Which viewport felt too tall? Defaults above assume desktop; mobile may need a
    separate nudge.
 6. **Category shelves** (SHS-5) — worth the extra page length, or is the Explore-categories tile row enough?
@@ -124,7 +121,7 @@ eye against the live page.
 | SHS-3 | 3tGVSIlU | "On sale" and "Top rated" shelves | SHS-2 |
 | SHS-4 | mETkwXkj | "Made in Namibia" and "From South Africa" shelves | SHS-2 |
 | SHS-5 | ABB1gwlR | Category shelves for the top 2 categories (optional) | SHS-2 |
-| SHS-6 | vEJI4mGQ | Server-side shelf filters (onSale, inStock, originCountry, minRating, rating/discount sorts) to lift the 100-product ceiling; not needed pre-launch (open question 4) | SHS-3/4/5 |
+| SHS-6 | vEJI4mGQ | One `/shop` shelves endpoint (all shelves in a single response, rules moved server-side) plus reusable `ProductQuery` filters and sorts, to lift the 100-product ceiling; not needed pre-launch (open question 4) | SHS-3/4/5 |
 | SHS-7 | 5AhR9PHK | Shelf "View all" links open a filtered `/discover` (On sale, Top rated, origin shelves are unfiltered today); `/discover` reads the SHS-6 filters and shows them as chips | SHS-6 |
 
 SHS-1 and SHS-2 can ship in parallel; SHS-3/4/5 each touch `shop.html`/`shop.ts`, so they go one at a time
