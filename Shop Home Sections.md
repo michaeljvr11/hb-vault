@@ -8,7 +8,7 @@ tags:
 
 # Shop Home Sections
 
-Status: **spec, 2026-10-26** — cards SHS-1..SHS-5 created in To Do; nothing implemented.
+Status: **SHS-1 and SHS-2 shipped 2026-10-26** ([PR #127](https://github.com/michaeljvr11/hb-mono-repo/pull/127), awaiting human merge); SHS-3/4/5 still in To Do.
 Related: [[Public Storefront & SSR]] · [[Product Discounts & Sale Pricing]] · [[Product Reviews & Ratings]] · [[Listing Types & Vendor Rules]] · [[Category Taxonomy & Discovery]] · [[Storefront UI Cleanup Batch]] · [[Product Image Optimization Pipeline]]
 
 ## Problem
@@ -127,3 +127,14 @@ eye against the live page.
 
 SHS-1 and SHS-2 can ship in parallel; SHS-3/4/5 each touch `shop.html`/`shop.ts`, so they go one at a time
 (or as one `/ship-batch`) after SHS-2.
+
+## Implementation Notes (2026-10-26) — SHS-1 + SHS-2
+
+**Branch:** `feat/Bn6dsEla-shop-hero-height-and-product-shelf` · **PR:** #127 · one branch, sequential (SHS-2 then SHS-1).
+
+- **SHS-2:** `app-product-shelf` (`shared/components/product-shelf/`) is presentational: inputs `shelfId`, `heading`, `subheading`, `products`, `state`, `viewAllQueryParams`, `isWishlisted`; outputs `addToCart`, `wishlistToggle`, `retry`. Copy and the 6 skeletons are inline (nothing overrides them yet). Section-header styles moved into mixins in `styles/_section.scss`, used by `shop.scss` (categories and vendors bands) and the shelf. `selectShelfProducts(products, { max = 8, min = 4 })` is the shelf rule; New in Namibia calls it with `min: 1`. The heading id is now `new-in-namibia-heading`.
+- **SHS-1 finding the spec got wrong:** the hero band's height was set by its content, not `min-height`. At 1440px the headline (`display`, 68px) ran to five lines (357px) while the photo column was only ~395px, so lowering min-heights alone would do nothing. The headline now uses the `4xl` step at weight 800 (DESIGN.md updated), plus a smaller floater shelf (88px, 140px from md), less vertical padding and lower min-heights. Photo width, `<picture>` set and `HERO_IMAGE_SIZES` untouched.
+- **Measured hero height (before to after):** 390px 850 to 729, 768px 670 to 606, 1280px 751 to 562, 1440px 704 to 571, 1920px 801 to 579. Desktop is 19-28% shorter, a bit past the 15-20% target.
+- **Review:** `code-reviewer` FAIL on the headline using a raw `clamp` off the type scale; fixed by using the `4xl` token. It also flagged tight floater spacing at 768px (md shelf restored to 140px) and unused shelf inputs (removed).
+- **Tests:** web 110 files / 1730 pass (new `product-shelf.spec.ts`); contrast gate 48 pairs pass; `npm run build` passes with `INTERNAL_API_BASE_URL` set.
+- **Follow-ups:** SHS-3/4/5 are unblocked. The `4xl` headline is a visible type change a human should eyeball.
