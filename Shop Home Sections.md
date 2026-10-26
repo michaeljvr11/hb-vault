@@ -8,7 +8,7 @@ tags:
 
 # Shop Home Sections
 
-Status: **SHS-1 and SHS-2 shipped 2026-10-26** ([PR #127](https://github.com/michaeljvr11/hb-mono-repo/pull/127), awaiting human merge); SHS-3/4/5 still in To Do.
+Status: **all five cards shipped 2026-10-26.** SHS-1 and SHS-2 merged ([PR #127](https://github.com/michaeljvr11/hb-mono-repo/pull/127)); SHS-3, SHS-4 and SHS-5 in [PR #128](https://github.com/michaeljvr11/hb-mono-repo/pull/128), awaiting human merge.
 Related: [[Public Storefront & SSR]] · [[Product Discounts & Sale Pricing]] · [[Product Reviews & Ratings]] · [[Listing Types & Vendor Rules]] · [[Category Taxonomy & Discovery]] · [[Storefront UI Cleanup Batch]] · [[Product Image Optimization Pipeline]]
 
 ## Problem
@@ -138,3 +138,15 @@ SHS-1 and SHS-2 can ship in parallel; SHS-3/4/5 each touch `shop.html`/`shop.ts`
 - **Review:** `code-reviewer` FAIL on the headline using a raw `clamp` off the type scale; fixed by using the `4xl` token. It also flagged tight floater spacing at 768px (md shelf restored to 140px) and unused shelf inputs (removed).
 - **Tests:** web 110 files / 1730 pass (new `product-shelf.spec.ts`); contrast gate 48 pairs pass; `npm run build` passes with `INTERNAL_API_BASE_URL` set.
 - **Follow-ups:** SHS-3/4/5 are unblocked. The `4xl` headline is a visible type change a human should eyeball.
+
+## Implementation Notes (2026-10-26) — SHS-3 + SHS-4 + SHS-5
+
+**Branch:** `feat/3tGVSIlU-shop-home-shelves` · **PR:** #128 · one branch, sequential, one commit per card, then a review-fix commit.
+
+- **Derivations:** `features/shop/shop-shelves.ts` holds pure, exported `deriveOnSale`, `deriveTopRated`, `deriveByOrigin(products, country)` and `deriveTopCategoryShelves(categories, products, count = 2)`. All filter to in-stock (`productStockTotal`, newly exported from `product-card.ts` and reused by the card) and go through `selectShelfProducts` (max 8, min 4). `shop.ts` exposes them as computeds behind a `shelfSource` gate that returns `[]` unless products are `loaded`; category shelves also wait for categories.
+- **Page:** `shop.html` renders each shelf under an `@if (...length)` (category shelves in an `@for`), reusing `app-product-shelf` and the page's `isWishlisted` / `onAddToCart` / `onWishlistToggle`. Order: New in Namibia, On sale, Made in Namibia, From South Africa, Top rated, Explore categories, category shelves, Featured vendors.
+- **Bug the review caught:** the first On sale sort used `discountPercent`, but `mappers.utils.ts` only sends it to a product's owner or an admin (`canSeeRawDiscount`), so for anonymous visitors and SSR every product scored 0 and the shelf was newest-first, and a vendor saw their own items jump to the top. The fixtures set `discountPercent`, which the public payload never has, so the tests hid it. On sale now ranks by `1 - effectivePrice / price`. **Lesson:** build web fixtures from the public payload, not from fields only the owner sees.
+- **Smaller review fixes:** a View all link with filter params now has `aria-label="View all <heading>"` (the generic label stays for unfiltered links); copy no longer assumes every seller is a vendor ("Marked down for a limited time", "Namibian sellers, shipped within Namibia").
+- **Copy rule held:** origin shelf copy makes no duty / tax-free / customs claim; a page test greps for it.
+- **Tests:** web 111 files / 1763 pass; build passes with `INTERNAL_API_BASE_URL`. Shelves eyeballed in the browser pane against a throwaway mock API (36 products) at 1440px and 390px; real API not run.
+- **Follow-ups:** open question 4 stands: shelves only see the 100 newest products; add `onSale=true` and a rating sort to `GET /products` when the catalogue nears 100. Cosmetic: `categoryShelves` sits before `topRatedProducts` in `shop.ts` (page order differs). A product can appear in several shelves (no dedupe).
