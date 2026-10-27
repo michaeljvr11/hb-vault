@@ -154,8 +154,8 @@ the gap is the vendor one.
 product form in a right-hand `.drawer`. The admin catalogue (`admin-catalog.html`) uses
 the same drawer pattern. Fix: a centred modal dialog (max-width, scrolling body, sticky
 footer actions, full-screen sheet below `md`), keeping the focus trap, Escape, the backdrop
-and the unsaved-changes behaviour. *Assumption:* the admin catalogue gets the same change
-so the two portals match. Drop it from the card if the owner wants vendor only.
+and the unsaved-changes behaviour. *Owner confirmed 2026-10-27:* the admin catalogue gets
+the same change so the two portals match.
 
 **QA-7: Tidy the custom date pickers.** "Custom start / Custom end" in the shared
 `earnings-range-selector` (vendor and admin earnings) are outline `mat-form-field`s next to
