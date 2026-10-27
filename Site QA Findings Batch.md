@@ -9,7 +9,7 @@ tags:
 
 # Site QA Findings Batch
 
-Status: **specced 2026-10-27**, cards QA-1 … QA-21 in Trello "To Do". Not started.
+Status: **specced 2026-10-27**. **QA-12, QA-13, QA-14 and QA-15 are in review in PR #132** (`feat/I6pewX9r-checkout-qa-batch`). All other cards (QA-1 … QA-11, QA-16 … QA-21) are not started.
 Related: [[Storefront UI Cleanup Batch]] · [[Storefront Prelaunch Polish Batch]] · [[Money & Currency Rules]] · [[Vendor Earnings & Commission]] · [[Vendor & Admin Portals]] · [[Customer Profile]] · [[Configurable Shipping Fee]] · [[Shop Home Sections]] · [[Product Discounts & Sale Pricing]] · [[Legal & Compliance Readiness]] · [[Transactional Email & Order Notifications]] · [[Auth & Roles]]
 
 ## Problem
@@ -258,3 +258,42 @@ Migrations: QA-20 only (user deactivation reason, note and timestamp).
 | QA-19 | `ZwHABBKv` | Admin vendor detail: show every application answer |
 | QA-20 | `EeGjozdz` | User deactivation: reason + email |
 | QA-21 | `FQUHQkzC` | Commission rate: reject past dates and an unchanged rate |
+
+## Implementation Notes — 2026-10-27 (checkout batch, PR #132)
+
+**Branch:** `feat/I6pewX9r-checkout-qa-batch` · **Cards:** QA-12 `syUWbsqu`, QA-13 `I6pewX9r`, QA-14 `8wFo0GA9`, QA-15 `YgW3VC7n` · **PR:** [#132](https://github.com/michaeljvr11/hb-mono-repo/pull/132), open for review. Bundled per the Checkout grouping above.
+
+### What shipped
+
+- **QA-12 (saved addresses):** radio picker above the checkout form, fed by `AddressesService.list` in the browser only. The most recent address preselects only while the form is pristine. Picking one patches the form, so the shipping-fee preview refetches. Pay is disabled while loading. Responses for an old country are dropped by request token. "Use a new address" resets the form. No address-book writes.
+- **QA-13 (savings):** computed in `apps/api/src/cart/cart.service.ts` `toDto()`. Order creation is untouched. Cart and checkout show a "You save (CUR)" row when `discountTotal > 0`. Discounted lines show the list price struck through, with visually hidden "Original price" / "Sale price" labels.
+- **QA-14 (payment disclosure):** native `<details class="checkout__security">`, closed by default. Summary: "How payment works · No card details collected · priced in your order currency". It never says "secure", because the provider is still a sandbox.
+- **QA-15 (currency copy):** the nav switch title and aria-label say it is a display preference. There is no visible caption, because the xl utility row is tight; QA-9 owns that width. The PDP shows "Charged in <listing currency>" when display differs from listing. Cart and checkout always show "You pay in X" and a peg sentence from `chargedCurrencyCopy()`. The hard-coded "1:1 Regional Parity Guaranteed" line and the "Currency conversion" row are removed.
+
+### Contract as built (QA-13)
+
+| Field | Type | Meaning |
+|---|---|---|
+| `CartItemDto.listUnitPrice` | `number?` | Undiscounted unit price. Present only while the line's discount is active at the response instant. |
+| `CartTotalDto.discountTotal` | `number` (required) | Per currency. Integer-cents sum of `(list − effective) × qty`, half-up, using the same `now` as `unitPrice`. Never summed across currencies. |
+
+### Decisions
+
+- Savings are computed on the server. The web app does no money arithmetic.
+- Mixed-currency carts keep the per-currency wording and the existing blocking message.
+- The peg sentence says "1:1" only when `nadPerZar` is exactly 1. Otherwise it shows the rate. It is omitted when the rate is null.
+- QA-15 explains the existing rule and changes no money behaviour (owner decision 2026-10-27).
+
+### Verification
+
+- Tests cover mixed lines, half-up rounding (10.01 at 50% → 5.01), float drift, two currencies, and expired and not-yet-started discounts. Race specs cover a late address and a stale fee.
+- code-reviewer returned FIX-FIRST. Fixed: "You pay in" moved out of the fee-ready branch, the country ternary now uses `COUNTRY_NAMES`, and the race specs were added.
+- Local end-to-end: two units of a 20%-off product (R400 → R320) plus a full-price line gave `discountTotal` 160. Picking a saved ZA address refetched the fee as domestic. Order `5a20854f` charged R 1 890,00, equal to the checkout Total, with unit price snapshot R320.
+- No page overflow at 375, 768 and 1280, light and dark. Screenshots: `docs/design/redesign/evidence/qa-checkout/`.
+- `npm run test:api` 1910 passed (14 skipped). Web 111 files / 1801 tests. `lint:api` clean. Full build green.
+
+### Follow-ups
+
+- SVO-9 (`61cBONbQ`) is still blocked on the payment-provider choice. The security block names no provider.
+- The shared trust banner still says "ZAR or NAD, 1:1" as fixed copy. Out of these cards' scope; flagged in the PR.
+- `checkout.scss` is ~11 kB against an 8 kB style budget. Warning only; it was already over.

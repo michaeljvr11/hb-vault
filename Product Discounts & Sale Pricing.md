@@ -156,3 +156,12 @@ The "Search index" line in the Integration points section (above) previously sta
 - `npm run build -w @hb/shared` and `npm run build -w @hb/api` — both green. The full monorepo `npm run build` (which includes `apps/web`'s build-time prerender) was not run locally — prerendering needs `PRERENDER_API_BASE_URL`/`INTERNAL_API_BASE_URL` pointed at a reachable API (see `apps/web/CLAUDE.md`), which this local shell doesn't have set; this is a pre-existing local-environment limitation, not something this batch changed. CI's build step covers it.
 - **Code review:** one blocking FIX-FIRST finding during review of card USLrzcr6 (missing `JwtAuthGuard` direct test coverage for the new `OptionalAuth` path), fixed same session; confirming pass returned SHIP. Two addressable findings on the search/header slices fixed inline; two pre-existing follow-ups noted (a `--hb-secondary` token use on the PDP reviews section, and a pre-existing stale-suggestion race in the omnibox search duplicated to the header) spun off as separate cards, neither blocking.
 - Evidence log: 385 commits · 360 AI-tagged (93%) · 173 specs · 30 prod blocks.
+
+## Implementation Notes (2026-10-27) — Cart savings (QA-13)
+
+**Branch:** `feat/I6pewX9r-checkout-qa-batch` · **Card:** `I6pewX9r` · **PR:** [#132](https://github.com/michaeljvr11/hb-mono-repo/pull/132), open for review. Part of [[Site QA Findings Batch]].
+
+- Cart savings are computed on the server in `CartService.toDto()`. `CartItemDto.listUnitPrice?` is the undiscounted unit price. It is present only while that line's discount is active at the response instant. It is the base `price`, already public on `GET /products`. No raw discount fields are added.
+- `CartTotalDto.discountTotal` is required and per currency: the integer-cents sum of `(list − effective) × qty`, half-up, using the same `now` as `unitPrice`. Currencies are never summed together.
+- Cart and checkout show "You save (CUR)" when `discountTotal > 0`. Discounted lines show the list price struck through.
+- Order pricing is unchanged. Order lines still snapshot the effective price. Order items do not store the list price, so savings do not appear on order history or emails. That is out of scope.
