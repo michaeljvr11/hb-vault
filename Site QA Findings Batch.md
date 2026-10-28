@@ -9,7 +9,7 @@ tags:
 
 # Site QA Findings Batch
 
-Status: **specced 2026-10-27**. **QA-12, QA-13, QA-14 and QA-15 are in review in PR #132** (`feat/I6pewX9r-checkout-qa-batch`). All other cards (QA-1 … QA-11, QA-16 … QA-21) are not started.
+Status: **specced 2026-10-27**. **QA-12, QA-13, QA-14 and QA-15 merged in PR #132** (`feat/I6pewX9r-checkout-qa-batch`). **QA-2, QA-3, QA-10 and QA-21 are in review in PR #133** (`feat/eFktpP5m-qa-polish-batch`). Not started: QA-1, QA-4 … QA-9, QA-11, QA-16 … QA-20.
 Related: [[Storefront UI Cleanup Batch]] · [[Storefront Prelaunch Polish Batch]] · [[Money & Currency Rules]] · [[Vendor Earnings & Commission]] · [[Vendor & Admin Portals]] · [[Customer Profile]] · [[Configurable Shipping Fee]] · [[Shop Home Sections]] · [[Product Discounts & Sale Pricing]] · [[Legal & Compliance Readiness]] · [[Transactional Email & Order Notifications]] · [[Auth & Roles]]
 
 ## Problem
@@ -297,3 +297,33 @@ Migrations: QA-20 only (user deactivation reason, note and timestamp).
 - SVO-9 (`61cBONbQ`) is still blocked on the payment-provider choice. The security block names no provider.
 - The shared trust banner still says "ZAR or NAD, 1:1" as fixed copy. Out of these cards' scope; flagged in the PR.
 - `checkout.scss` is ~11 kB against an 8 kB style budget. Warning only; it was already over.
+
+## Implementation Notes — 2026-10-28 (QA polish batch, PR #133)
+
+**Branch:** `feat/eFktpP5m-qa-polish-batch` · **Cards:** QA-2 `eFktpP5m`, QA-3 `NXIBdJ7c`, QA-10 `m5WUCkuL`, QA-21 `FQUHQkzC` · **PR:** [#133](https://github.com/michaeljvr11/hb-mono-repo/pull/133), open for review. Bundled as the highest-priority open defects. The four are file-disjoint, with no `@hb/shared` change and no migration. One commit per card.
+
+### What shipped
+
+- **QA-2 (icon font):** Material Symbols is a committed glyph subset of about 100 icons, all four axes kept. The woff2 drops from 4,001,276 B to about 86 KB. `font-display: block` on the icon face only. The hashed URL is preloaded from the SSR head (`server.ts` `findIconFontUrl` / `addIconFontPreload`). Regenerate with `npm run fonts:icons -w @hb/web`. The artefact is committed, so Docker and CI need no Python. `apps/web/CLAUDE.md` "Fonts + CSP" updated.
+- **QA-3 (category flyout):** a hover that opens the panel sets `openedByHover`. A pointer click on that panel confirms it, so it stays open and the next click closes it. Keyboard activation keeps the plain toggle.
+- **QA-10 (scroll):** new `NavigationScroll` service (`core/navigation/navigation-scroll.ts`) replaces `withInMemoryScrolling`, which cannot exempt query-only navigations. New path → top. Back/forward → saved position. Fragment → anchor. Query-only change → stays put. A `page` param that appears or changes → top. A filter change that drops `page` stays put. SSR no-op.
+- **QA-21 (commission rules):** `CommissionRateService.create` rejects `effectiveFrom` older than 5 min (400) and a `ratePercent` equal to the latest scheduled row (409). The admin form mirrors both, with a field error and a past-date check at submit.
+
+### Decisions
+
+- The icon subset prunes GSUB ligatures before shaping. Plain `pyftsubset --text` pulls back all ~4,400 icons through ligature closure. Each name is re-shaped with HarfBuzz to check that FILL still moves outlines.
+- Guard spec `apps/web/src/app/shared/icon-font.spec.ts` fails on a missing or unused icon, or a stale woff2 sha. The extractor throws on anything it cannot resolve.
+- QA-21 "same rate" compares against the latest scheduled row, which is what the API checks. It can differ from the rate in force when a future rate is already scheduled.
+
+### Verification
+
+- `lint:api` clean. `test:api` 1917 passed (14 skipped). Web 114 files passed. `npm run build` green.
+- Browser at 1280px: hover opened the flyout, click kept it open, second click closed it. New route landed at scroll 0. Changing a `/discover` category and sort did not jump to top. Icons render from the subset.
+- Built SSR server: preload link present on prerendered `/about` and SSR `/login` HTML. `font/woff2` served with a 1-year cache. CSP header unchanged.
+- code-reviewer returned FIX-FIRST (token fail on `.field-error`, QA-10 and QA-21 warnings). All fixed in "address review findings".
+- Not run: cold-cache Slow-4G visual check for QA-2.
+
+### Follow-ups
+
+- QA-10 back restore runs right after the route renders, so on data-fed pages it can land slightly short (2109 vs 2241 measured on /shop). The router's built-in has the same limit.
+- QA-1, QA-4 … QA-9, QA-11, QA-16 … QA-20 not started. SVO-9 still blocked on the payment provider.
