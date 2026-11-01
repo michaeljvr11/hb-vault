@@ -359,7 +359,7 @@ Migrations: QA-20 only (user deactivation reason, note and timestamp).
 
 ### Follow-ups
 
-- **Needs a human decision:** `/legal/shipping` "Where we deliver" says "anywhere in Namibia, and domestically within South Africa", but the table lists all 4 routes, including NA→ZA. Placeholder copy until LC-1 and the pre-launch sweep.
+- **Resolved (owner decision 2026-11-01):** `/legal/shipping` "Where we deliver" said "domestically within South Africa", which contradicted the table's NA→ZA route. The owner chose to reword the copy rather than hide the row. It now names delivery within either country and across the border in either direction (`05ca0e0`).
 - QA-19: the seed runs only on an empty DB (existing DBs need `db:reset`). `scripts/demo-data` is not tracked. The "applied before" note also shows for vendors an admin created by hand.
 - QA-8: two-currency rows are spec-only, because there is no local data.
 - The consent banner (`z-index: 1000`) still covers the modal footer until consent is given. This predates the batch; the old drawer had it too.
