@@ -14,7 +14,9 @@ Claude acted as a consultant on next steps for the Tech Accelerator hackathon. T
 whether to add Kafka, and the agreed first step was a proper BRS before any build.
 
 ## Deliverables
-Four documents, written to the mono-repo but **still uncommitted** in `docs/` there:
+Four documents. They were first drafted into the mono-repo's `docs/` (left untracked) and moved
+into this vault on 2026-11-01 as [[BRS — Business Requirements]], [[Delivery Roadmap]],
+[[ADR-001 Event-Driven Backbone]] and [[Target Architecture]]:
 - `docs/business/BRS.md`: the Business Requirements Specification. Objectives, stakeholders, the
   verified as-is state, about 30 numbered functional requirements (MoSCoW, each flagged if it needs
   events), NFRs, business rules, and the open questions carried over.
@@ -42,7 +44,7 @@ explicitly deferred out of v1. Noted that the synonyms admin slices (5b/5c) depe
 search API slice, so they can run in parallel. Then started the app (Postgres, API on 3000, web on 4200).
 
 ## Follow-ups
-- Decide whether to commit `docs/business/` and `docs/architecture/` to the mono-repo. They are still
-  untracked as of 2026-11-01.
+- The four docs are Draft v0.1. Their as-is sections predate analytics, discounts, search parity and
+  order tracking, so they need a refresh.
 - ADR-001 is still **Proposed**. Analytics (session 10) deliberately built direct ingestion with event
   names aligned to it.
