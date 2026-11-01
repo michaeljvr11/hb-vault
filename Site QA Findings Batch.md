@@ -9,7 +9,7 @@ tags:
 
 # Site QA Findings Batch
 
-Status: **specced 2026-10-27**. **QA-12, QA-13, QA-14 and QA-15 merged in PR #132** (`feat/I6pewX9r-checkout-qa-batch`). **QA-2, QA-3, QA-10 and QA-21 are in review in PR #133** (`feat/eFktpP5m-qa-polish-batch`). Not started: QA-1, QA-4 … QA-9, QA-11, QA-16 … QA-20.
+Status: **specced 2026-10-27**. **QA-12, QA-13, QA-14 and QA-15 merged in PR #132** (`feat/I6pewX9r-checkout-qa-batch`). **QA-2, QA-3, QA-10 and QA-21 merged in PR #133** (`feat/eFktpP5m-qa-polish-batch`). **QA-4, QA-6, QA-8, QA-17 and QA-19 are in review in PR #134** (`feat/gqE0a6e5-portal-polish-batch`). Not started: QA-1, QA-5, QA-7, QA-9, QA-11, QA-16, QA-18, QA-20.
 Related: [[Storefront UI Cleanup Batch]] · [[Storefront Prelaunch Polish Batch]] · [[Money & Currency Rules]] · [[Vendor Earnings & Commission]] · [[Vendor & Admin Portals]] · [[Customer Profile]] · [[Configurable Shipping Fee]] · [[Shop Home Sections]] · [[Product Discounts & Sale Pricing]] · [[Legal & Compliance Readiness]] · [[Transactional Email & Order Notifications]] · [[Auth & Roles]]
 
 ## Problem
@@ -326,4 +326,43 @@ Migrations: QA-20 only (user deactivation reason, note and timestamp).
 ### Follow-ups
 
 - QA-10 back restore runs right after the route renders, so on data-fed pages it can land slightly short (2109 vs 2241 measured on /shop). The router's built-in has the same limit.
-- QA-1, QA-4 … QA-9, QA-11, QA-16 … QA-20 not started. SVO-9 still blocked on the payment provider.
+- QA-1, QA-5, QA-7, QA-9, QA-11, QA-16, QA-18, QA-20 not started. SVO-9 still blocked on the payment provider.
+
+## Implementation Notes — 2026-11-01 (portal polish batch, PR #134)
+
+**Branch:** `feat/gqE0a6e5-portal-polish-batch` · **Cards:** QA-6 `gqE0a6e5` (primary), QA-17 `FH1uClnj`, QA-8 `7qpJ5S5g`, QA-4 `ZGEtbGcG`, QA-19 `ZwHABBKv` · **PR:** [#134](https://github.com/michaeljvr11/hb-mono-repo/pull/134), open for review. Bundled as the owner's pick. The five are file-disjoint, with no `@hb/shared` change and no migration. Built in parallel, one commit per card.
+
+**Commits:** `0b668ab` `@angular/cdk` declared · `82423b1` QA-4 · `02eebde` QA-8 · `38ad8e6` QA-6 · `763808f` QA-19 · `ffb9277` QA-17 · `b4a97e9` review fixes · `9d4ff05` screenshots.
+
+### What shipped
+
+- **QA-6 (modal):** new shared `ModalDialog` (`apps/web/src/app/shared/components/modal-dialog`). It projects `.hb-modal-form`, `.hb-modal-body` and `.hb-modal-footer` (global classes via `ViewEncapsulation.None`). `CdkTrapFocus` with autoCapture handles focus capture and return to the opener. Escape is a host binding and is ignored when `defaultPrevented`. The backdrop closes only when both mousedown and click were on it, so a drag-select out of an input does not lose the form. Body scroll lock is set in `afterNextRender`, so it is browser-only. Used by vendor products, the admin catalogue product form and the admin category form. The old drawer had no focus trap, Escape or focus return, and no unsaved-changes guard, so none was kept.
+- **QA-17 (live fees):** the public read is in [[Configurable Shipping Fee]]. `/legal/shipping` fetches it in the browser only (`isPlatformBrowser`), so the prerender needs no API. It renders a route × currency table. Columns come from `Object.values(CurrencyCode)`, and a missing cell shows "—". While loading, on error or with an empty list it shows "The fee for your route is shown at checkout before you pay." The copy says some products carry their own fee, so the checkout amount can be different from the route fee (overrides can be lower). `lastUpdated` is now 1 November 2026.
+- **QA-8 (settlement table):** the flex column moved from `td.settlement-money-cell` to an inner div. Admin earnings had the same bug on `td.vendor-money-cell`, fixed the same way. Period and status chip are `nowrap`. Numbers use `.num`, right-aligned with `tabular-nums`. `.table-card` changed from `overflow: hidden` to `overflow-x: auto`.
+- **QA-4 (confirm password):** new confirm field. `passwordsMatch(passwordKey='password', confirmKey='confirmPassword')` moved to `shared/validators/password.validators.ts` and is reused by reset-password. The body stays exactly `{ currentPassword, newPassword }`.
+- **QA-19 (application answers):** the Application `<section>` always renders all eight fields. Registered business shows Yes, No or Not provided. Registration No. shows the number, "Not applicable" when `isRegisteredBusiness === false`, otherwise Not provided. A legacy note shows when none of the eight fields is present (description, registered flag, categories, selling-in, contact person, contact phone, registration number, website). The website link has `rel="noopener noreferrer"`. The API seed's 4 vendors have full answers.
+
+### Decisions
+
+- Category form moved to the modal too (lead decision), so the admin catalogue page does not mix a drawer and a modal.
+- `@angular/cdk` is a direct web dependency now (`^21.2.0`, matching Material).
+- QA-4 blocks submit in `changePassword()`. The button is not disabled.
+
+### Verification
+
+- `lint:api` clean. `test:api` 1926 passed (14 skipped). Web 116 files, 1872 tests. `npm run build` green.
+- Browser: `/legal/shipping` table and the public endpoint (8 rows, 60s header). A temporary dev fee set showed on the page with no rebuild, then was deleted.
+- Modal: centred at 1280, body scroll, focus trap both ways, Escape and focus return, drag-select guard, 100dvh sheet below 768. Admin product and category modals checked.
+- QA-8 at 1280, 768 and 375 with no page overflow. QA-4 mismatch error. QA-19 legacy panel.
+- Screenshots: `docs/design/redesign/evidence/qa-portal/`.
+- code-reviewer returned FIX-FIRST: 2 token FAILs (admin-vendors 13px size, modal shadow/z-index/radius) plus warnings. All fixed in `b4a97e9`.
+
+### Follow-ups
+
+- **Needs a human decision:** `/legal/shipping` "Where we deliver" says "anywhere in Namibia, and domestically within South Africa", but the table lists all 4 routes, including NA→ZA. Placeholder copy until LC-1 and the pre-launch sweep.
+- QA-19: the seed runs only on an empty DB (existing DBs need `db:reset`). `scripts/demo-data` is not tracked. The "applied before" note also shows for vendors an admin created by hand.
+- QA-8: two-currency rows are spec-only, because there is no local data.
+- The consent banner (`z-index: 1000`) still covers the modal footer until consent is given. This predates the batch; the old drawer had it too.
+- Worth a card: `@IsUrl` validation on the vendor `website` field.
+- `getPublicFees` loads all historical rows. Fine now; `DISTINCT ON` would help if the history grows.
+- Still not started: QA-1, QA-5, QA-7, QA-9, QA-11, QA-16, QA-18, QA-20.

@@ -324,3 +324,10 @@ confirmed present at 0.00.
 
 **PR/Card:** feat/DwnyCLnX-configurable-shipping-fee (bundled batch of 6 cards: SF-1 #126 DwnyCLnX,
 SF-5 #130 EjWUrO6V, SF-3 #128 aQTPJZJK, SF-2 #127 ybWTncOf, SF-4 #129 BU7PoQIm, SF-6 #131 eTv2Guoq).
+
+## Implementation Notes (2026-11-01, QA-17 public fee read)
+
+- `GET /shipping-fee/public` on `PublicShippingFeeController`, `@Public`. Browser-only consumer: `/legal/shipping`, which is prerendered, so the fee loads client-side.
+- `ShippingFeeService.getPublicFees(now)` resolves each (route, currency) by the `getFeeAt` rule. A triple with no row is omitted.
+- Returns `CurrentShippingFeeDto[]`: route, currency and amount only. No per-product overrides or audit fields.
+- `Cache-Control: public, max-age=60, stale-while-revalidate=120`, set only on success.
