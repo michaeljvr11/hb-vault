@@ -9,7 +9,7 @@ tags:
 
 # Site QA Findings Batch
 
-Status: **specced 2026-10-27**. **QA-12, QA-13, QA-14 and QA-15 merged in PR #132** (`feat/I6pewX9r-checkout-qa-batch`). **QA-2, QA-3, QA-10 and QA-21 merged in PR #133** (`feat/eFktpP5m-qa-polish-batch`). **QA-4, QA-6, QA-8, QA-17 and QA-19 are in review in PR #134** (`feat/gqE0a6e5-portal-polish-batch`). Not started: QA-1, QA-5, QA-7, QA-9, QA-11, QA-16, QA-18, QA-20.
+Status: **specced 2026-10-27**. **QA-12, QA-13, QA-14 and QA-15 merged in PR #132** (`feat/I6pewX9r-checkout-qa-batch`). **QA-2, QA-3, QA-10 and QA-21 merged in PR #133** (`feat/eFktpP5m-qa-polish-batch`). **QA-4, QA-6, QA-8, QA-17 and QA-19 merged in PR #134** (`feat/gqE0a6e5-portal-polish-batch`). **QA-1, QA-5, QA-9, QA-11 and QA-16 are in review in PR #136** (`feat/yGRba8mk-storefront-qa-batch`). Not started: QA-7, QA-18, QA-20.
 Related: [[Storefront UI Cleanup Batch]] · [[Storefront Prelaunch Polish Batch]] · [[Money & Currency Rules]] · [[Vendor Earnings & Commission]] · [[Vendor & Admin Portals]] · [[Customer Profile]] · [[Configurable Shipping Fee]] · [[Shop Home Sections]] · [[Product Discounts & Sale Pricing]] · [[Legal & Compliance Readiness]] · [[Transactional Email & Order Notifications]] · [[Auth & Roles]]
 
 ## Problem
@@ -366,3 +366,40 @@ Migrations: QA-20 only (user deactivation reason, note and timestamp).
 - Worth a card: `@IsUrl` validation on the vendor `website` field.
 - `getPublicFees` loads all historical rows. Fine now; `DISTINCT ON` would help if the history grows.
 - Still not started: QA-1, QA-5, QA-7, QA-9, QA-11, QA-16, QA-18, QA-20.
+
+## Implementation Notes — 2026-11-01 (storefront QA batch, PR #136)
+
+**Branch:** `feat/yGRba8mk-storefront-qa-batch` · **Cards:** QA-1 `yGRba8mk` (primary), QA-5 `cPWBQEsU`, QA-9 `WR6Extzq`, QA-11 `cPMDYtHG`, QA-16 `pf0T6ggh` · **PR:** [#136](https://github.com/michaeljvr11/hb-mono-repo/pull/136), open for review. All five are the remaining web-only items. They are file-disjoint, with no `@hb/shared` or API change. Built in sequence, one commit per card. Each card has its own session log: [[session-27]] to [[session-31]].
+
+**Commits:** `997c0fd` QA-1 · `0f65a86` QA-5 · `4f2eeab` QA-9 · `a870542` QA-11 · `a53ccea` QA-16 · `ef840fc` review nits · `55e34ef` screenshots · `c1a3328` evidence.
+
+### What shipped
+
+- **QA-1 (category tiles):** `.category-card` is a centred column (icon, then name, then count), `text-align: center`. The chevron span and `.category-card__chevron` SCSS are deleted. The waypoint dot, hover lift and `overflow-wrap` are kept. The skeleton tiles share the class, so they match. `arrow_forward` is still used in 8 other templates, so the icon subset is unchanged.
+- **QA-5 (dashboard spacing):** `.quick-links` gets `margin-bottom: var(--hb-space-7)` (32px). The admin `.analytics-section` `margin-top` moves from raw `32px` to the same token.
+- **QA-9 (currency width):** `.nav-bar__currency-label` is `inline-block; min-width: 4ch; text-align: center`, which renders 36.9px for both codes. The visible label stays the bare code (QA-15).
+- **QA-11 (wishlist width):** both labels sit in one `inline-grid` cell. The inactive one has `.pdp__wishlist-btn-text--hidden` (`visibility: hidden`), so the button keeps the longer label's width and stays out of the accessibility tree. Icon-only below 768px is unchanged.
+- **QA-16 (WhatsApp link):** `CONTACT_DETAILS.whatsappUrl = https://wa.me/${PHONE_E164}`. `SOCIAL_LINKS.whatsapp` points at it. Returns and Terms render `<a target=_blank rel="noopener noreferrer">WhatsApp +264 81 355 9921</a>`. The per-page `whatsappNumber` derivations are removed.
+
+### Decisions
+
+- QA-5: 32px matches the admin gap above Analytics, so both dashboards share one rhythm.
+- QA-9: `4ch` rather than a spacing token, because it should scale with the label font.
+- QA-11: a grid stack rather than a `min-width`, so the width follows the real text and any future label change.
+- No specialist fan-out: five small CSS or template fixes were cheaper to do directly. code-reviewer returned SHIP with nits, all applied in `ef840fc`.
+
+### Verification
+
+- Web: full run 1873/1874. The `HttpParams.append` guardrail timed out under load; on its own, with all touched specs, 8 files and 196 tests pass. `npm run build` green with the CI placeholder `INTERNAL_API_BASE_URL`. Prerendered `/legal/returns` and `/legal/terms` contain the anchor.
+- Headless Chrome with real mouse input, against `ng serve` and a fixture API (the local API needs `MEILI_SEARCH_KEY` in `apps/api/.env`).
+- QA-1: tiles centred at 320, 375, 768 and 1280, light and dark, with no overflow.
+- QA-9: 45 nav boxes identical across NAD → ZAR → NAD.
+- QA-11: no width change in either button at 1280, 768 and 375.
+- QA-5: 32px gap on both dashboards.
+- Screenshots: `docs/design/redesign/evidence/qa-storefront/`.
+
+### Follow-ups
+
+- The local API needs `MEILI_SEARCH_KEY` and `MEILI_ADMIN_KEY` in `apps/api/.env` (Josh's machine) to boot.
+- The full web suite can time out the `HttpParams.append` guardrail (5s) under load. Worth raising its timeout.
+- Still not started: QA-7, QA-18, QA-20.
